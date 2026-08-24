@@ -5,6 +5,7 @@ dist/
 .release/
 .vercel/
 site/.vercel/
+site/.env*
 *.log
 .DS_Store
 assets/Codeex.iconset/
