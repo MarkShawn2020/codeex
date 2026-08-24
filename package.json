@@ -1,0 +1,51 @@
+{
+  "name": "codeex",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Codeex: the full Codex Desktop experience with local plugins.",
+  "scripts": {
+    "dev": "CODEEX_BUILD_TARGET=launcher vite --host 127.0.0.1",
+    "prepare:codex": "node scripts/prepare-codex.mjs",
+    "build": "pnpm build:plugin-center && node scripts/start.mjs --no-launch",
+    "install:app": "pnpm build && node scripts/install-app.mjs",
+    "build:launcher": "pnpm build:plugin-center",
+    "build:plugin-center": "CODEEX_BUILD_TARGET=launcher vite build",
+    "build:marketplace": "pnpm build:plugin-center",
+    "build:release": "pnpm check && pnpm build:plugin-center && node scripts/build-release.mjs",
+    "build:lovinsp": "CODEEX_BUILD_TARGET=lovinsp LOVINSP=1 vite build",
+    "start": "node scripts/open-launcher.mjs",
+    "start:codex": "node scripts/start.mjs",
+    "launcher:server": "node scripts/launcher-server.mjs",
+    "smoke": "node scripts/start.mjs --isolated --smoke",
+    "smoke:daemonize": "node scripts/start.mjs --isolated --smoke --with-daemonize",
+    "verify": "node scripts/verify.mjs",
+    "plugins": "node scripts/plugins-cli.mjs",
+    "test:core": "node scripts/self-test.mjs",
+    "test:daemonize": "node scripts/test-daemonize.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && node scripts/check-source.mjs && pnpm test:core"
+  },
+  "devDependencies": {
+    "@babel/parser": "^7.28.4",
+    "@electron/asar": "^4.0.1",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "lovinsp": "^1.8.0",
+    "magic-string": "^0.30.21",
+    "typescript": "^7.0.2",
+    "vite": "8.1.5"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.21.0",
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "lucide-react": "^1.33.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

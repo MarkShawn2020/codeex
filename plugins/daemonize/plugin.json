@@ -1,0 +1,24 @@
+{
+  "id": "daemonize",
+  "name": "Daemonize",
+  "version": "0.1.0",
+  "description": "让 app-server 独立于界面运行，为界面重启后恢复任务提供基础。",
+  "category": "运行时",
+  "icon": "daemon",
+  "entry": "./index.mjs",
+  "requiresRestart": true,
+  "permissions": [
+    {
+      "label": "后台进程",
+      "detail": "启动并复用 Codex app-server daemon"
+    },
+    {
+      "label": "本地套接字",
+      "detail": "通过 ~/.codex/app-server-control 与后台服务通信"
+    },
+    {
+      "label": "托管 CLI 副本",
+      "detail": "在 ~/.codex/packages/standalone/current 准备可更新的 Codex CLI"
+    }
+  ]
+}

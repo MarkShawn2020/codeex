@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codeex — 给 Codex 装上本地插件</title>
+    <meta name="description" content="Codeex 是支持本地插件的 Codex 启动器。保留完整 Agent、代码、Skills 与 MCP 能力，并加入 Lovinsp、Daemonize 等可安装插件。" />
+    <link rel="canonical" href="https://codeex.lovstudio.ai/" />
+    <meta property="og:title" content="Codeex — 给 Codex 装上本地插件" />
+    <meta property="og:description" content="完整 Codex 体验，加上可审计、可移除的本地插件。" />
+    <meta property="og:url" content="https://codeex.lovstudio.ai/" />
+    <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="nav shell">
+      <a class="brand" href="/" aria-label="Codeex 首页">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="m24 4 16 9v18l-16 9L8 31V13z"/><path d="m8 13 16 9 16-9M24 22v18"/></svg>
+        <span>Codeex</span>
+      </a>
+      <nav><a href="#plugins">插件</a><a href="#install">安装</a><a href="https://github.com/MarkShawn2020/codeex">GitHub</a></nav>
+    </header>
+
+    <main>
+      <section class="hero shell">
+        <div class="eyebrow"><span></span> CODEX, EXTENDED LOCALLY</div>
+        <h1>完整的 Codex，<br /><em>再多一点可能。</em></h1>
+        <p class="lede">Codeex 是 Codex 的本地插件启动器。任务、Agent、代码操作、Skills 和 MCP 一样不少；Lovinsp、Daemonize 等能力按需安装。</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/MarkShawn2020/codeex/releases/download/v0.4.0/Codeex-0.4.0-arm64.dmg">下载 Codeex 0.4.0</a>
+          <a class="button secondary" href="https://github.com/MarkShawn2020/codeex/releases/tag/v0.4.0">查看更新内容</a>
+        </div>
+        <p class="requirements">Apple Silicon · macOS 13+ · 需要已安装官方 Codex</p>
+        <div class="product-window" aria-label="Codeex 插件页示意">
+          <div class="window-bar"><i></i><i></i><i></i><span>Codeex · Plugins</span></div>
+          <div class="window-body">
+            <aside><b>Public</b><b>Personal</b><b class="selected">Codeex</b></aside>
+            <div class="plugin-area">
+              <div class="access"><span class="shield">✓</span><div><strong>Full Disk Access</strong><small>Work across repositories and protected folders.</small></div><mark>Enabled</mark></div>
+              <article><span class="plugin-icon">◎</span><div><strong>Lovinsp</strong><small>Inspect production UI and jump to bundle source.</small></div><button>Installed</button></article>
+              <article><span class="plugin-icon">≋</span><div><strong>Daemonize</strong><small>Keep Agent tasks alive across UI restarts.</small></div><button>Install</button></article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section shell" id="plugins">
+        <div class="section-heading"><span>01</span><h2>插件是能力，不是替代品</h2></div>
+        <div class="feature-grid">
+          <article><b>Lovinsp</b><p>在生产 Codex 界面中检查元素，直接定位到对应 bundle 源码。</p></article>
+          <article><b>Daemonize</b><p>让 app-server 独立于界面运行，为重启后继续任务提供基础。</p></article>
+          <article><b>Archive Sidebar</b><p>把归档任务带回侧边栏，更快回到长期工作的上下文。</p></article>
+        </div>
+      </section>
+
+      <section class="section install shell" id="install">
+        <div class="section-heading"><span>02</span><h2>三步开始</h2></div>
+        <ol>
+          <li><span>1</span><div><b>准备官方 Codex</b><p>安装并至少启动一次官方应用，确认它位于 `/Applications/ChatGPT.app`。</p></div></li>
+          <li><span>2</span><div><b>安装 Codeex</b><p>打开 DMG，把 Codeex 拖入“应用程序”文件夹。</p></div></li>
+          <li><span>3</span><div><b>启用完全磁盘访问权限</b><p>按首次启动引导授权并重启 Codeex，避免逐个文件夹询问。</p></div></li>
+        </ol>
+        <div class="release-card">
+          <div><small>当前版本</small><strong>Codeex 0.4.0</strong><span>2026-08-24 · arm64</span></div>
+          <div><small>SHA-256</small><code>504921ac1e024068fe011646c3b411eaf8da4c72dba743888eafa89d98931dbc</code></div>
+          <a href="https://github.com/MarkShawn2020/codeex/releases/download/v0.4.0/SHA256SUMS.txt">校验文件 ↗</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="shell"><span>© 2026 LovStudio</span><p>Codeex 是独立的本地开发工具，与 OpenAI 无隶属或背书关系。Codex 与 OpenAI 是其各自所有者的商标。</p></footer>
+  </body>
+</html>

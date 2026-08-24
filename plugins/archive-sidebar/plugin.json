@@ -1,0 +1,16 @@
+{
+  "id": "archive-sidebar",
+  "name": "Archive Sidebar",
+  "version": "0.1.0",
+  "description": "在主侧边栏 Plugins 下方添加 Archive 入口，并直接打开 Archived chats。",
+  "category": "Navigation",
+  "icon": "archive",
+  "entry": "./index.mjs",
+  "requiresRestart": true,
+  "permissions": [
+    {
+      "label": "修改渲染层",
+      "detail": "在主侧边栏 Plugins 下方注入 Archive 入口，并导航到 Archived chats"
+    }
+  ]
+}

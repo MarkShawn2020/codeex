@@ -1,0 +1,20 @@
+{
+  "id": "lovinsp",
+  "name": "Lovinsp",
+  "version": "1.8.0",
+  "description": "在生产 Codex 界面中检查元素，并定位到对应 bundle 源码。",
+  "category": "开发工具",
+  "icon": "inspect",
+  "entry": "./index.mjs",
+  "requiresRestart": true,
+  "permissions": [
+    {
+      "label": "修改渲染层",
+      "detail": "注入元素定位元数据与本地 click-to-code 桥"
+    },
+    {
+      "label": "本机端口",
+      "detail": "使用 127.0.0.1:5678 与开发工具通信"
+    }
+  ]
+}
