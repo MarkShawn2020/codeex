@@ -75,13 +75,25 @@ pnpm plugins uninstall lovinsp
 ## 开发与验证
 
 ```bash
-pnpm dev                 # 预览插件中心
+pnpm dev                 # 启动与正式实例隔离的 Codeex Dev，并监听源码变更自动重启
+pnpm dev:plugin-center   # 只预览插件中心
 pnpm check               # 类型、模块、manifest 与控制接口测试
 pnpm build               # 构建插件中心及 production 运行资源
 pnpm start:codex         # 开发时直接启动完整 Codeex 运行界面
 pnpm smoke               # 隔离 profile 验证完整界面与 Lovinsp
 pnpm smoke:daemonize     # 验证界面重启后 daemon 连接连续性
 ```
+
+也可以从任意目录启动完整开发实例：
+
+```bash
+npx lovstudio app codeex dev
+```
+
+Codeex Dev 使用独立的 `ai.lovstudio.codeex.dev` bundle identifier、运行目录、
+Electron profile、插件状态以及 DevTools/Lovinsp 端口，不会停止或复用
+`/Applications/Codeex.app` 的正式实例。修改 `bridge/`、`marketplace/`、`plugins/`、
+`scripts/` 或 `vite.config.ts` 后，开发实例会自动重建并重启。
 
 ### macOS 文件夹权限
 

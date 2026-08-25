@@ -6,6 +6,10 @@
 
 - 修复后台启动器仍在、完整 Codex 运行体已退出时，重新打开 Codeex 或执行 `npx lovstudio app codeex start` 不会恢复窗口却误报成功的问题；显式打开现在会重新拉起并激活运行体，CLI 也会等到运行体真实存活后再报告成功。
 
+### 开发
+
+- `npx lovstudio app codeex dev` 现在会启动与正式应用完全隔离的 Codeex Dev 桌面实例，并在插件、bridge、管理界面或运行脚本变化后自动重建和重启；原来的插件中心浏览器预览迁移为 `pnpm dev:plugin-center`。
+
 ## 0.4.1 — 2026-08-25
 
 ### 修复

@@ -30,12 +30,13 @@ import {
 } from './code-signing.mjs';
 import { createRuntimeEnvironment } from './runtime-environment.mjs';
 
-const isolated = process.argv.includes('--isolated');
 const smoke = process.argv.includes('--smoke');
 const noLaunch = process.argv.includes('--no-launch');
 const withDaemonize = process.argv.includes('--with-daemonize');
 const withArchiveSidebar = process.argv.includes('--with-archive-sidebar');
 const managedWrapper = process.argv.includes('--managed-wrapper');
+const devMode = process.argv.includes('--dev');
+const isolated = process.argv.includes('--isolated') || devMode;
 const stateFile = isolated ? isolatedPluginState : normalPluginState;
 const children = new Set();
 let app = null;
@@ -201,7 +202,11 @@ async function buildAndLaunch() {
     `--user-data-dir=${userData}`,
   ];
   if (isolated) {
-    console.log(`✓ Enhanced Codex isolated test profile: ${userData}`);
+    console.log(
+      devMode
+        ? `✓ Codeex Dev profile: ${userData}`
+        : `✓ Enhanced Codex isolated test profile: ${userData}`,
+    );
   } else {
     console.log(`✓ Enhanced Codex profile: ${userData}`);
   }
@@ -287,14 +292,20 @@ async function main() {
     run(process.execPath, ['scripts/prepare-codex.mjs'], { inherit: true });
   }
   if (isolated) {
-    await rm(stateFile, { force: true });
-    const isolatedPluginIds = ['lovinsp'];
-    if (withArchiveSidebar) isolatedPluginIds.unshift('archive-sidebar');
-    if (withDaemonize) isolatedPluginIds.unshift('daemonize');
-    await writePluginState({
-      schemaVersion: 1,
-      installed: isolatedPluginIds,
-    }, stateFile);
+    if (devMode) {
+      if (!existsSync(stateFile)) {
+        await writePluginState(await readPluginState(normalPluginState), stateFile);
+      }
+    } else {
+      await rm(stateFile, { force: true });
+      const isolatedPluginIds = ['lovinsp'];
+      if (withArchiveSidebar) isolatedPluginIds.unshift('archive-sidebar');
+      if (withDaemonize) isolatedPluginIds.unshift('daemonize');
+      await writePluginState({
+        schemaVersion: 1,
+        installed: isolatedPluginIds,
+      }, stateFile);
+    }
     if (withDaemonize) isolatedCodexHome = await mkdtemp('/tmp/lcd-smoke-');
     isolatedControl = await startControlServer({
       stateFile,

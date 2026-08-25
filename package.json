@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Codeex: the full Codex Desktop experience with local plugins.",
   "scripts": {
-    "dev": "CODEEX_BUILD_TARGET=launcher vite --host 127.0.0.1",
+    "dev": "node scripts/dev.mjs",
+    "dev:plugin-center": "CODEEX_BUILD_TARGET=launcher vite --host 127.0.0.1",
     "prepare:codex": "node scripts/prepare-codex.mjs",
     "build": "pnpm build:plugin-center && node scripts/start.mjs --no-launch",
     "install:app": "pnpm build:plugin-center && node scripts/install-app.mjs",

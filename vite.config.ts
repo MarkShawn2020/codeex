@@ -13,7 +13,7 @@ function lovinsp() {
       bundler: 'vite',
       dev: true,
       pathType: 'absolute',
-      port: 5678,
+      port: Number(process.env.CODEEX_LOVINSP_PORT || 5678),
       printServer: true,
       showSwitch: false,
       hideConsole: false,

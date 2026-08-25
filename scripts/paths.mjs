@@ -22,10 +22,14 @@ export const officialArchive = path.join(
   'Resources',
   'app.asar',
 );
-export const upstreamRoot = path.join(workRoot, '.codex-upstream');
+export const upstreamRoot = path.resolve(
+  process.env.CODEEX_UPSTREAM_ROOT || path.join(workRoot, '.codex-upstream'),
+);
 export const upstreamApp = path.join(upstreamRoot, 'app');
 export const sourceWebview = path.join(upstreamApp, 'webview');
-export const runtimeRoot = path.join(workRoot, '.runtime');
+export const runtimeRoot = path.resolve(
+  process.env.CODEEX_RUNTIME_ROOT || path.join(workRoot, '.runtime'),
+);
 // The prepared clone is immutable installation input. A packaged Codeex app can
 // point the runtime pipeline at its own bundle without ever touching the clone
 // that may be serving the current development session.

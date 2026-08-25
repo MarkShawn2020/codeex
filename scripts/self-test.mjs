@@ -8,6 +8,13 @@ import {
   parseDeveloperIdIdentities,
   resolveCodeSigningIdentity,
 } from './code-signing.mjs';
+import {
+  createDevEnvironment,
+  defaultDevtoolsPort,
+  defaultLovinspPort,
+  devBundleIdentifier,
+  devDisplayName,
+} from './dev-environment.mjs';
 import { detectFullDiskAccess } from './macos-permissions.mjs';
 import { launcherInfoPlist } from './launcher-plist.mjs';
 import { createRuntimeEnvironment } from './runtime-environment.mjs';
@@ -48,6 +55,33 @@ async function request(route, method = 'GET') {
 }
 
 try {
+  const devEnvironment = createDevEnvironment({ PATH: '/usr/bin' }, projectRoot);
+  assert.equal(devEnvironment.CODEEX_RUNTIME_BUNDLE_IDENTIFIER, devBundleIdentifier);
+  assert.equal(devEnvironment.CODEEX_RUNTIME_DISPLAY_NAME, devDisplayName);
+  assert.equal(devEnvironment.CODEEX_DEVTOOLS_PORT, String(defaultDevtoolsPort));
+  assert.equal(devEnvironment.CODEEX_LOVINSP_PORT, String(defaultLovinspPort));
+  assert.equal(
+    devEnvironment.CODEEX_RUNTIME_ROOT,
+    path.join(projectRoot, '.runtime', 'dev', 'runtime'),
+  );
+  assert.equal(
+    devEnvironment.CODEEX_UPSTREAM_ROOT,
+    path.join(projectRoot, '.runtime', 'dev', 'upstream'),
+  );
+  assert.equal(devEnvironment.PATH, '/usr/bin');
+  const overriddenDevEnvironment = createDevEnvironment({
+    CODEEX_RUNTIME_ROOT: '/tmp/must-not-be-reused',
+    CODEEX_UPSTREAM_ROOT: '/tmp/must-not-be-reused',
+    CODEEX_DEV_RUNTIME_ROOT: '/tmp/codeex-dev-runtime',
+    CODEEX_DEV_UPSTREAM_ROOT: '/tmp/codeex-dev-upstream',
+    CODEEX_DEVTOOLS_PORT: '10433',
+    CODEEX_LOVINSP_PORT: '10778',
+  }, projectRoot);
+  assert.equal(overriddenDevEnvironment.CODEEX_RUNTIME_ROOT, '/tmp/codeex-dev-runtime');
+  assert.equal(overriddenDevEnvironment.CODEEX_UPSTREAM_ROOT, '/tmp/codeex-dev-upstream');
+  assert.equal(overriddenDevEnvironment.CODEEX_DEVTOOLS_PORT, '10433');
+  assert.equal(overriddenDevEnvironment.CODEEX_LOVINSP_PORT, '10778');
+
   const runtimeEnvironment = createRuntimeEnvironment({
     __CFBundleIdentifier: 'ai.lovstudio.codeex',
     XPC_FLAGS: '0x0',
@@ -92,6 +126,9 @@ try {
   assert.match(openLauncherSource, /await waitForRuntime\(auth, deadline\)/);
   assert.match(openLauncherSource, /Codeex is running \(PID/);
   assert.doesNotMatch(openLauncherSource, /Opened Codeex/);
+  const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
+  assert.equal(packageJson.scripts.dev, 'node scripts/dev.mjs');
+  assert.match(packageJson.scripts['dev:plugin-center'], /CODEEX_BUILD_TARGET=launcher vite/);
   const launcherPlist = launcherInfoPlist({
     version: '1.2.3&test',
     nodePath: '/tmp/node',
