@@ -48,6 +48,10 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let url = try startServer()
             configureControl(url)
             installStatusMenu()
+            // Launching the app is an explicit foreground action. Runtime
+            // preparation remains background-only; this activation is scoped
+            // to the user's open/reopen request.
+            showCodeex()
         } catch {
             showFatalError(error)
         }
@@ -200,25 +204,34 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         URLSession.shared.dataTask(with: request) { data, _, _ in completion(data) }.resume()
     }
 
-    private func activateRunningRuntime() {
-        request("api/status") { data in
-            guard let data,
-                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let runtime = payload["runtime"] as? [String: Any],
-                  let enhanced = runtime["enhancedCodex"] as? [String: Any],
-                  let number = enhanced["pid"] as? NSNumber,
-                  let application = NSRunningApplication(
-                      processIdentifier: pid_t(number.intValue)
-                  ) else { return }
-            DispatchQueue.main.async {
-                application.activate(options: [.activateAllWindows])
+    private func activateRuntime(attemptsRemaining: Int) {
+        request("api/status") { [weak self] data in
+            guard let self else { return }
+            var application: NSRunningApplication?
+            if let data,
+               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let runtime = payload["runtime"] as? [String: Any],
+               let enhanced = runtime["enhancedCodex"] as? [String: Any],
+               let number = enhanced["pid"] as? NSNumber {
+                application = NSRunningApplication(
+                    processIdentifier: pid_t(number.intValue)
+                )
+            }
+            if let application {
+                DispatchQueue.main.async {
+                    application.activate(options: [.activateAllWindows])
+                }
+            } else if attemptsRemaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.activateRuntime(attemptsRemaining: attemptsRemaining - 1)
+                }
             }
         }
     }
 
     @objc private func showCodeex() {
         request("api/launch", method: "POST") { [weak self] _ in
-            self?.activateRunningRuntime()
+            self?.activateRuntime(attemptsRemaining: 120)
         }
     }
 
@@ -302,6 +315,11 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showCodeex()
+        return true
     }
 }
 

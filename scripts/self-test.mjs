@@ -76,14 +76,22 @@ try {
   assert.match(launcherSource, /environment\["CODEEX_APPLICATION_PATH"\] = runtimeApp\.path/);
   assert.doesNotMatch(launcherSource, /showFullDiskAccessGuidanceIfNeeded/);
   assert.doesNotMatch(launcherSource, /CodeexFullDiskAccessGuidanceVersion/);
-  assert.doesNotMatch(launcherSource, /applicationShouldHandleReopen/);
-  assert.doesNotMatch(launcherSource, /activateRuntime\(attemptsRemaining:/);
-  assert.match(launcherSource, /private func activateRunningRuntime\(\)/);
+  assert.match(launcherSource, /applicationShouldHandleReopen/);
+  assert.match(launcherSource, /private func activateRuntime\(attemptsRemaining:/);
+  assert.match(launcherSource, /showCodeex\(\)/);
   const runtimeManagerSource = await readFile(
     path.join(projectRoot, 'scripts', 'runtime-manager.mjs'),
     'utf8',
   );
   assert.doesNotMatch(runtimeManagerSource, /spawnSync\('\/usr\/bin\/open'/);
+  const openLauncherSource = await readFile(
+    path.join(projectRoot, 'scripts', 'open-launcher.mjs'),
+    'utf8',
+  );
+  assert.match(openLauncherSource, /await controlRequest\(auth, '\/api\/launch', 'POST'\)/);
+  assert.match(openLauncherSource, /await waitForRuntime\(auth, deadline\)/);
+  assert.match(openLauncherSource, /Codeex is running \(PID/);
+  assert.doesNotMatch(openLauncherSource, /Opened Codeex/);
   const launcherPlist = launcherInfoPlist({
     version: '1.2.3&test',
     nodePath: '/tmp/node',
