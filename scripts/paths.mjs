@@ -36,7 +36,7 @@ export const cloneApp = path.resolve(
 export const preparedRuntimeBundleIdentifier = 'ai.lovstudio.codeex.runtime';
 export const runtimeBundleIdentifier =
   process.env.CODEEX_RUNTIME_BUNDLE_IDENTIFIER || preparedRuntimeBundleIdentifier;
-export const runtimeDisplayName = process.env.CODEEX_RUNTIME_DISPLAY_NAME || 'ChatGPT';
+export const runtimeDisplayName = process.env.CODEEX_RUNTIME_DISPLAY_NAME || 'Codeex';
 export const launcherDist = path.resolve(
   process.env.CODEEX_LAUNCHER_DIST || path.join(runtimeRoot, 'launcher-ui'),
 );

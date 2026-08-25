@@ -6,11 +6,13 @@ import {
   rename,
   rm,
   stat,
+  writeFile,
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { preparedCloneApp as cloneApp, productIcon, projectRoot } from './paths.mjs';
+import { launcherDist, productIcon, projectRoot } from './paths.mjs';
 import { signApplication } from './code-signing.mjs';
+import { launcherInfoPlist } from './launcher-plist.mjs';
 
 const installRoot = path.resolve(process.env.CODEEX_INSTALL_DIR || '/Applications');
 const destination = path.join(installRoot, 'Codeex.app');
@@ -31,22 +33,15 @@ function run(command, args) {
 }
 
 async function main() {
-  if (!(await exists(cloneApp))) throw new Error('Build Codeex before installing it.');
-  run('/usr/bin/codesign', ['--verify', '--deep', '--strict', cloneApp]);
   const pnpmPath = run('/usr/bin/which', ['pnpm']);
   const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
 
   await rm(stage, { recursive: true, force: true });
-  run('/usr/bin/ditto', [cloneApp, stage]);
   const contents = path.join(stage, 'Contents');
   const macos = path.join(contents, 'MacOS');
   const resources = path.join(contents, 'Resources');
-  const upstreamExecutable = path.join(macos, 'ChatGPT');
-  const runtimeExecutable = path.join(macos, 'CodeexRuntime');
-  if (!(await exists(upstreamExecutable))) {
-    throw new Error('The prepared Codex executable is missing from the installation input.');
-  }
-  await rename(upstreamExecutable, runtimeExecutable);
+  await mkdir(macos, { recursive: true });
+  await mkdir(resources, { recursive: true });
   await copyFile(productIcon, path.join(resources, 'Codeex.icns'));
   run('/usr/bin/xcrun', [
     'swiftc',
@@ -58,22 +53,21 @@ async function main() {
     '-o',
     path.join(macos, 'Codeex'),
   ]);
-  const plist = path.join(contents, 'Info.plist');
-  const setPlistString = (key, value) => {
-    const existing = spawnSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plist]);
-    if (existing.status !== 0) run('/usr/libexec/PlistBuddy', ['-c', `Add :${key} string ${value}`, plist]);
-  };
-  setPlistString('CFBundleDisplayName', 'Codeex');
-  setPlistString('CFBundleExecutable', 'Codeex');
-  setPlistString('CFBundleIconFile', 'Codeex.icns');
-  setPlistString('CFBundleIdentifier', 'ai.lovstudio.codeex');
-  setPlistString('CFBundleName', 'Codeex');
-  setPlistString('CFBundleShortVersionString', packageJson.version);
-  setPlistString('CFBundleVersion', packageJson.version);
-  setPlistString('CodeexProjectRoot', projectRoot);
-  setPlistString('CodeexNodePath', process.execPath);
-  setPlistString('CodeexPnpmPath', pnpmPath);
-  setPlistString('CodeexRuntimeMode', 'embedded');
+  await writeFile(
+    path.join(contents, 'Info.plist'),
+    launcherInfoPlist({
+      version: packageJson.version,
+      nodePath: process.execPath,
+      projectRoot,
+      launcherDist,
+    }),
+  );
+  // Keep the resolved package-manager path as diagnostics for local development.
+  run('/usr/libexec/PlistBuddy', [
+    '-c',
+    `Add :CodeexPnpmPath string ${pnpmPath}`,
+    path.join(contents, 'Info.plist'),
+  ]);
   const signing = signApplication(stage);
   console.log(
     signing.stable

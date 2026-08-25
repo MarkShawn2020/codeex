@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
@@ -15,6 +15,8 @@ import {
   officialArchive,
   prepareStamp,
   preparedRuntimeBundleIdentifier as runtimeBundleIdentifier,
+  productIcon,
+  runtimeDisplayName,
   runtimeRoot,
   sourceWebview,
   upstreamApp,
@@ -79,7 +81,7 @@ async function isCurrent(fingerprint) {
       clonedPackage.version === fingerprint.version &&
       clonedPackage.codexBuildFlavor === 'prod' &&
       Boolean(statFile(cloneArchive, 'webview/index.html').unpacked) &&
-      displayName.stdout.trim() === fingerprint.displayName &&
+      displayName.stdout.trim() === runtimeDisplayName &&
       bundleIdentifier.stdout.trim() === runtimeBundleIdentifier &&
       previous.asarHash === (await sha256(cloneArchive))
     );
@@ -171,6 +173,10 @@ async function prepare() {
 
   const plist = path.join(stageClone, 'Contents', 'Info.plist');
   setPlistValue(plist, 'CFBundleIdentifier', runtimeBundleIdentifier);
+  setPlistValue(plist, 'CFBundleDisplayName', runtimeDisplayName);
+  setPlistValue(plist, 'CFBundleName', runtimeDisplayName);
+  setPlistValue(plist, 'CFBundleIconFile', 'Codeex.icns');
+  await copyFile(productIcon, path.join(cloneResources, 'Codeex.icns'));
 
   const asarHash = await sha256(path.join(cloneResources, 'app.asar'));
   run('/usr/libexec/PlistBuddy', [

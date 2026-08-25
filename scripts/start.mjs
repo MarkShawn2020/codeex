@@ -28,6 +28,7 @@ import {
   resolveCodeSigningIdentity,
   signApplication,
 } from './code-signing.mjs';
+import { createRuntimeEnvironment } from './runtime-environment.mjs';
 
 const isolated = process.argv.includes('--isolated');
 const smoke = process.argv.includes('--smoke');
@@ -205,7 +206,7 @@ async function buildAndLaunch() {
     console.log(`✓ Enhanced Codex profile: ${userData}`);
   }
   const launchEnv = await applyBeforeLaunchHooks(plugins, {
-    ...baseEnvironment(),
+    ...createRuntimeEnvironment(baseEnvironment(), cloneApp),
     CODEX_SPARKLE_ENABLED: 'false',
   });
   const child = spawn(cloneExecutable, args, {

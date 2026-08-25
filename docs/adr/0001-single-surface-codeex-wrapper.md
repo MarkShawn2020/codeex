@@ -45,7 +45,11 @@ the complete Codex renderer.
 A small native supervisor remains inside the same `Codeex.app` bundle, but it
 does not show a launcher window. It starts the managed Electron runtime
 immediately, owns its lifecycle, and exposes a menu-bar item for the optional
-plugin center. The plugin center is a secondary window of Codeex.
+plugin center. The plugin center is a secondary window of Codeex. The
+supervisor and Electron runtime use distinct LaunchServices identities; parent
+application identity variables are never inherited by the runtime. Background
+startup, health checks, status streaming, and restarts must not activate either
+application. Foreground activation is reserved for an explicit user action.
 
 The canonical official `/Applications/ChatGPT.app` is read-only input. It is
 never patched in place. Generated production sources and the private runtime
@@ -101,6 +105,8 @@ does not meet the one-surface requirement.
 - If the official version changes, stage and verify the new wrapper before replacement.
 - If a plugin rebuild fails, keep the last signed runtime and report the exact error.
 - If Codeex exits, do not terminate an independent official ChatGPT instance.
+- If the native supervisor exits or is replaced, its control server detects the
+  lost parent and stops the managed runtime instead of becoming an orphan.
 - If historical task paths retain an old project root, preserve the compatibility symlink.
 
 ## References

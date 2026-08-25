@@ -1,11 +1,11 @@
 {
   "product": "Codeex",
-  "version": "0.4.0",
-  "publishedAt": "2026-08-24",
+  "version": "0.4.1",
+  "publishedAt": "2026-08-25",
   "platform": "macOS",
   "architecture": "arm64",
   "minimumSystemVersion": "13.0",
-  "download": "https://github.com/MarkShawn2020/codeex/releases/download/v0.4.0/Codeex-0.4.0-arm64.dmg",
-  "sha256": "504921ac1e024068fe011646c3b411eaf8da4c72dba743888eafa89d98931dbc",
-  "bytes": 103017775
+  "download": "https://github.com/MarkShawn2020/codeex/releases/download/v0.4.1/Codeex-0.4.1-arm64.dmg",
+  "sha256": "6a063f47a9242d7e5870c86f7bc62a77217d0d5fe13223d5af72f5c41c60b62d",
+  "bytes": 106633279
 }

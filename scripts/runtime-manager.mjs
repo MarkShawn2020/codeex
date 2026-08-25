@@ -56,10 +56,7 @@ export async function enhancedCodexStatus() {
 
 export async function launchEnhancedCodex() {
   const current = await enhancedCodexStatus();
-  if (current.state === 'running') {
-    spawnSync('/usr/bin/open', [cloneApp], { stdio: 'ignore' });
-    return current;
-  }
+  if (current.state === 'running') return current;
   if (current.state === 'starting') return current;
 
   await mkdir(path.dirname(runtimeLogFile), { recursive: true });

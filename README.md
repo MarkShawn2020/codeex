@@ -1,6 +1,6 @@
 # Codeex
 
-Codeex 0.4.0 是支持本地插件的完整 Codex Desktop。打开 `/Applications/Codeex.app`
+Codeex 0.4.1 是支持本地插件的完整 Codex Desktop。打开 `/Applications/Codeex.app`
 会直接进入熟悉的 Codex 界面，可正常创建任务、运行 Agent、操作代码以及使用
 Skills 和 MCP；插件中心只是同一应用菜单栏中的辅助窗口，不再是必须经过的启动页。
 
@@ -8,6 +8,9 @@ Codeex 不覆盖、也不再分发 `/Applications/ChatGPT.app`。公开安装包
 插件和本地构建依赖；首次运行会从用户已经安装的官方 production 包，在 Application
 Support 中准备增强运行体。它在产品体验上是一个应用，在更新和签名边界上则与官方
 ChatGPT 相互独立。
+
+后台启动器只负责菜单栏和运行体生命周期，不会因任务进度、状态刷新或自动重启夺取
+当前应用焦点；只有用户主动选择“显示 Codeex”或打开插件中心时才会切换前台应用。
 
 [从 codeex.lovstudio.ai 下载 Codeex](https://codeex.lovstudio.ai/) ·
 [更新日志](CHANGELOG.md)
@@ -40,7 +43,7 @@ Codeex 负责：
 
 1. 安装并至少启动一次官方 Codex，确认它位于 `/Applications/ChatGPT.app`；
 2. 从 [codeex.lovstudio.ai](https://codeex.lovstudio.ai/) 下载 DMG，把 Codeex 拖入“应用程序”；
-3. 首次启动按引导开启“完全磁盘访问权限”，然后重启 Codeex。
+3. 如需跨项目、下载和附件目录工作，从 Codeex 菜单栏主动打开“完全磁盘访问权限…”并在授权后重启 Codeex。
 
 开发安装：
 
@@ -86,10 +89,10 @@ Codeex 会优先使用钥匙串中唯一的 `Developer ID Application` 身份签
 Team ID 与 bundle ID 让 macOS 在版本重建后继续识别同一个 Codeex，避免对
 Downloads、Documents、Desktop 反复弹出首次访问授权。
 
-首次启动时，Codeex 会引导用户前往“系统设置 → 隐私与安全性 → 完全磁盘访问
-权限”，并建议添加或开启 `/Applications/Codeex.app`。这适合需要跨项目、下载、
-附件和受保护目录工作的 Agent；授权后需重新启动 Codeex。Codeex Tab、插件中心与
-菜单栏都会保留这个入口。macOS 不允许应用自行授予该权限，最终确认必须由用户完成。
+Codeex Tab、插件中心与菜单栏会显示“完全磁盘访问权限”入口，但后台启动过程不会
+自动弹窗或切换前台应用。需要跨项目、下载、附件和受保护目录工作的用户可主动打开
+“系统设置 → 隐私与安全性 → 完全磁盘访问权限”并开启 Codeex，授权后需重新启动。
+macOS 不允许应用自行授予该权限，最终确认必须由用户完成。
 
 多证书机器通过 `CODEEX_SIGN_IDENTITY` 指定证书 hash 或名称。没有 Developer
 ID 时会降级为 ad-hoc 签名并明确警告；这种模式的 designated requirement 绑定

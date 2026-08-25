@@ -22,6 +22,7 @@ import {
   resolveCodeSigningIdentity,
   signApplication,
 } from './code-signing.mjs';
+import { launcherInfoPlist } from './launcher-plist.mjs';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -82,13 +83,6 @@ async function isMachO(target) {
   }
 }
 
-function xmlEscape(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-}
-
 async function main() {
   const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
   const version = packageJson.version;
@@ -140,7 +134,7 @@ async function main() {
   await chmod(nodeExecutable, 0o755);
   await copyFile(officialNodeLicense, path.join(resources, 'node', 'LICENSE'));
 
-  for (const directory of ['scripts', 'plugins', 'bridge', 'node_modules']) {
+  for (const directory of ['scripts', 'plugins', 'bridge', 'assets', 'node_modules']) {
     await copyDirectory(path.join(projectRoot, directory), path.join(embeddedRoot, directory));
   }
   await copyDirectory(launcherDist, path.join(embeddedRoot, 'launcher-ui'));
@@ -149,29 +143,14 @@ async function main() {
     await copyFile(path.join(projectRoot, file), path.join(embeddedRoot, file));
   }
 
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>CFBundleDisplayName</key><string>Codeex</string>
-  <key>CFBundleExecutable</key><string>Codeex</string>
-  <key>CFBundleIconFile</key><string>Codeex.icns</string>
-  <key>CFBundleIdentifier</key><string>ai.lovstudio.codeex</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Codeex</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${xmlEscape(version)}</string>
-  <key>CFBundleVersion</key><string>${xmlEscape(version)}</string>
-  <key>CodeexNodePath</key><string>@bundle/Contents/Resources/node/bin/node</string>
-  <key>CodeexProjectRoot</key><string>@bundle/Contents/Resources/codeex-runtime</string>
-  <key>CodeexRuntimeMode</key><string>local-clone</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
-  <key>NSHighResolutionCapable</key><true/>
-</dict></plist>
-`;
-  await writeFile(path.join(contents, 'Info.plist'), plist);
+  await writeFile(
+    path.join(contents, 'Info.plist'),
+    launcherInfoPlist({
+      version,
+      nodePath: '@bundle/Contents/Resources/node/bin/node',
+      projectRoot: '@bundle/Contents/Resources/codeex-runtime',
+    }),
+  );
   await writeFile(nodeEntitlements, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>

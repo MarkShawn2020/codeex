@@ -20,8 +20,20 @@ func requiredPath(_ key: String) -> String {
     return value
 }
 
+func optionalPath(_ key: String) -> String? {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+          !value.isEmpty else {
+        return nil
+    }
+    let bundlePrefix = "@bundle/"
+    if value.hasPrefix(bundlePrefix) {
+        return Bundle.main.bundleURL
+            .appendingPathComponent(String(value.dropFirst(bundlePrefix.count))).path
+    }
+    return value
+}
+
 final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let fullDiskAccessGuidanceVersion = 1
     private var pluginWindow: NSWindow?
     private var server: Process?
     private var logHandle: FileHandle?
@@ -36,10 +48,6 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let url = try startServer()
             configureControl(url)
             installStatusMenu()
-            activateRuntime(attemptsRemaining: 120)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.showFullDiskAccessGuidanceIfNeeded()
-            }
         } catch {
             showFatalError(error)
         }
@@ -80,9 +88,13 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             runtimeApp = workRoot.appendingPathComponent(".runtime/Codeex.app", isDirectory: true)
             runtimeExecutable = runtimeApp.appendingPathComponent("Contents/MacOS/ChatGPT").path
             runtimeBundleIdentifier = "ai.lovstudio.codeex.runtime"
-            runtimeDisplayName = "ChatGPT"
-            launcherDist = URL(fileURLWithPath: projectRoot, isDirectory: true)
-                .appendingPathComponent("launcher-ui", isDirectory: true)
+            runtimeDisplayName = "Codeex"
+            launcherDist = URL(
+                fileURLWithPath: optionalPath("CodeexLauncherDist")
+                    ?? URL(fileURLWithPath: projectRoot, isDirectory: true)
+                        .appendingPathComponent("launcher-ui", isDirectory: true).path,
+                isDirectory: true
+            )
         }
         let logDirectory = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/Codeex", isDirectory: true)
@@ -104,7 +116,8 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let toolDirectories = [URL(fileURLWithPath: nodePath).deletingLastPathComponent().path]
         environment["PATH"] = toolDirectories.joined(separator: ":") + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
         environment["CODEEX_WRAPPER_MODE"] = "1"
-        environment["CODEEX_APPLICATION_PATH"] = Bundle.main.bundlePath
+        environment["CODEEX_APPLICATION_PATH"] = runtimeApp.path
+        environment["CODEEX_LAUNCHER_APPLICATION_PATH"] = Bundle.main.bundlePath
         environment["CODEEX_WORK_ROOT"] = workRoot.path
         if let launcherDist { environment["CODEEX_LAUNCHER_DIST"] = launcherDist.path }
         environment["CODEEX_RUNTIME_APP"] = runtimeApp.path
@@ -112,6 +125,7 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         environment["CODEEX_RUNTIME_BUNDLE_IDENTIFIER"] = runtimeBundleIdentifier
         environment["CODEEX_RUNTIME_DISPLAY_NAME"] = runtimeDisplayName
         environment["CODEEX_RUNTIME_STATE"] = supportRoot.appendingPathComponent("runtime.json").path
+        environment["CODEEX_SUPERVISOR_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         environment["CODEEX_CODEX_CLI"] = runtimeApp
             .appendingPathComponent("Contents/Resources/codex").path
         environment["CODEEX_LAUNCHED_FROM_FINDER"] = "1"
@@ -186,32 +200,25 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         URLSession.shared.dataTask(with: request) { data, _, _ in completion(data) }.resume()
     }
 
-    private func activateRuntime(attemptsRemaining: Int) {
-        request("api/status") { [weak self] data in
-            guard let self else { return }
-            var pid: pid_t?
-            if let data,
-               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let runtime = payload["runtime"] as? [String: Any],
-               let enhanced = runtime["enhancedCodex"] as? [String: Any],
-               let number = enhanced["pid"] as? NSNumber {
-                pid = pid_t(number.intValue)
-            }
-            if let pid, let application = NSRunningApplication(processIdentifier: pid) {
-                DispatchQueue.main.async {
-                    application.activate(options: [.activateAllWindows])
-                }
-            } else if attemptsRemaining > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.activateRuntime(attemptsRemaining: attemptsRemaining - 1)
-                }
+    private func activateRunningRuntime() {
+        request("api/status") { data in
+            guard let data,
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let runtime = payload["runtime"] as? [String: Any],
+                  let enhanced = runtime["enhancedCodex"] as? [String: Any],
+                  let number = enhanced["pid"] as? NSNumber,
+                  let application = NSRunningApplication(
+                      processIdentifier: pid_t(number.intValue)
+                  ) else { return }
+            DispatchQueue.main.async {
+                application.activate(options: [.activateAllWindows])
             }
         }
     }
 
     @objc private func showCodeex() {
         request("api/launch", method: "POST") { [weak self] _ in
-            self?.activateRuntime(attemptsRemaining: 120)
+            self?.activateRunningRuntime()
         }
     }
 
@@ -249,9 +256,7 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func restartCodeex() {
-        request("api/restart", method: "POST") { [weak self] _ in
-            self?.activateRuntime(attemptsRemaining: 180)
-        }
+        request("api/restart", method: "POST") { _ in }
     }
 
     private func hasFullDiskAccess() -> Bool {
@@ -264,25 +269,6 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return true
         } catch {
             return false
-        }
-    }
-
-    private func showFullDiskAccessGuidanceIfNeeded() {
-        guard !hasFullDiskAccess() else { return }
-        let defaults = UserDefaults.standard
-        let key = "CodeexFullDiskAccessGuidanceVersion"
-        guard defaults.integer(forKey: key) < fullDiskAccessGuidanceVersion else { return }
-        defaults.set(fullDiskAccessGuidanceVersion, forKey: key)
-
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "为 Codeex 启用完全磁盘访问权限"
-        alert.informativeText = "Codeex 需要访问你交给 Agent 的项目、下载文件和附件。启用后，可避免 macOS 分别询问“下载”“文稿”“桌面”等文件夹权限。\n\n请在系统设置中添加或开启 Codeex，然后重新启动 Codeex。"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "打开系统设置")
-        alert.addButton(withTitle: "稍后")
-        if alert.runModal() == .alertFirstButtonReturn {
-            openFullDiskAccessSettings()
         }
     }
 
@@ -307,11 +293,6 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.runModal()
         quitting = true
         NSApp.terminate(nil)
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showCodeex()
-        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {

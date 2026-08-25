@@ -9,6 +9,12 @@ import {
   resolveCodeSigningIdentity,
 } from './code-signing.mjs';
 import { detectFullDiskAccess } from './macos-permissions.mjs';
+import { launcherInfoPlist } from './launcher-plist.mjs';
+import { createRuntimeEnvironment } from './runtime-environment.mjs';
+import {
+  isSupervisorAttached,
+  parseSupervisorPid,
+} from './supervisor-lifecycle.mjs';
 
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'codeex-test-'));
 const stateFile = path.join(temporary, 'plugins.json');
@@ -42,6 +48,53 @@ async function request(route, method = 'GET') {
 }
 
 try {
+  const runtimeEnvironment = createRuntimeEnvironment({
+    __CFBundleIdentifier: 'ai.lovstudio.codeex',
+    XPC_FLAGS: '0x0',
+    XPC_SERVICE_NAME: 'application.ai.lovstudio.codeex',
+    CODEEX_LAUNCHED_FROM_FINDER: '1',
+    CODEEX_APPLICATION_PATH: '/Applications/Codeex.app',
+    CODEEX_PLUGIN_STATE: '/tmp/plugins.json',
+  }, '/tmp/Runtime/Codeex.app');
+  assert.equal(runtimeEnvironment.__CFBundleIdentifier, undefined);
+  assert.equal(runtimeEnvironment.XPC_FLAGS, undefined);
+  assert.equal(runtimeEnvironment.XPC_SERVICE_NAME, undefined);
+  assert.equal(runtimeEnvironment.CODEEX_LAUNCHED_FROM_FINDER, undefined);
+  assert.equal(runtimeEnvironment.CODEEX_APPLICATION_PATH, '/tmp/Runtime/Codeex.app');
+  assert.equal(runtimeEnvironment.CODEEX_PLUGIN_STATE, '/tmp/plugins.json');
+  assert.equal(parseSupervisorPid('42'), 42);
+  assert.equal(parseSupervisorPid('0'), null);
+  assert.equal(parseSupervisorPid('not-a-pid'), null);
+  assert.equal(isSupervisorAttached(42, { currentParentPid: 42, signal: () => {} }), true);
+  assert.equal(isSupervisorAttached(42, { currentParentPid: 1, signal: () => {} }), false);
+  assert.equal(isSupervisorAttached(42, {
+    currentParentPid: 42,
+    signal: () => { throw new Error('missing'); },
+  }), false);
+
+  const launcherSource = await readFile(path.join(projectRoot, 'launcher', 'main.swift'), 'utf8');
+  assert.match(launcherSource, /environment\["CODEEX_APPLICATION_PATH"\] = runtimeApp\.path/);
+  assert.doesNotMatch(launcherSource, /showFullDiskAccessGuidanceIfNeeded/);
+  assert.doesNotMatch(launcherSource, /CodeexFullDiskAccessGuidanceVersion/);
+  assert.doesNotMatch(launcherSource, /applicationShouldHandleReopen/);
+  assert.doesNotMatch(launcherSource, /activateRuntime\(attemptsRemaining:/);
+  assert.match(launcherSource, /private func activateRunningRuntime\(\)/);
+  const runtimeManagerSource = await readFile(
+    path.join(projectRoot, 'scripts', 'runtime-manager.mjs'),
+    'utf8',
+  );
+  assert.doesNotMatch(runtimeManagerSource, /spawnSync\('\/usr\/bin\/open'/);
+  const launcherPlist = launcherInfoPlist({
+    version: '1.2.3&test',
+    nodePath: '/tmp/node',
+    projectRoot: '/tmp/codeex',
+    launcherDist: '/tmp/codeex/.runtime/launcher-ui',
+  });
+  assert.match(launcherPlist, /<key>LSUIElement<\/key><true\/>/);
+  assert.match(launcherPlist, /<key>CodeexRuntimeMode<\/key><string>local-clone<\/string>/);
+  assert.match(launcherPlist, /<key>CodeexLauncherDist<\/key><string>\/tmp\/codeex\/\.runtime\/launcher-ui<\/string>/);
+  assert.match(launcherPlist, /<key>CFBundleVersion<\/key><string>1\.2\.3&amp;test<\/string>/);
+  assert.doesNotMatch(launcherPlist, /CodeexRuntime<\/string>/);
   const identityFixture = [
     '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Developer ID Application: Example Team (TEAMID1234)"',
     '  2) 0123456789ABCDEF0123456789ABCDEF01234567 "Apple Development: Developer (TEAMID1234)"',
