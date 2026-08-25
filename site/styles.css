@@ -65,7 +65,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .site-header .nav-download { display: inline-flex; align-items: center; gap: 20px; min-height: 38px; padding: 0 13px; border: 1px solid var(--line-strong); color: var(--ink); background: #101215; }
 .site-header .nav-download:hover { color: #08090a; background: var(--phosphor); border-color: var(--phosphor); }
 
-.hero { min-height: calc(100vh - 75px); padding-block: clamp(76px, 9vw, 132px) 84px; display: grid; grid-template-columns: minmax(0, 1.03fr) minmax(470px, .97fr); align-items: center; gap: clamp(54px, 7vw, 112px); position: relative; }
+.hero { min-height: calc(100vh - 109px); min-height: calc(100svh - 109px); padding-block: clamp(64px, 7vw, 104px) 64px; display: grid; grid-template-columns: minmax(0, 1.03fr) minmax(470px, .97fr); align-items: center; gap: clamp(54px, 7vw, 112px); position: relative; }
 .hero::before { position: absolute; top: 11%; left: -14%; width: 520px; height: 520px; border: 1px solid rgba(255,90,71,.12); border-radius: 50%; content: ""; box-shadow: 0 0 120px rgba(255,90,71,.055) inset; pointer-events: none; }
 .signal-line { display: flex; align-items: center; gap: 11px; margin-bottom: 28px; color: var(--ink-faint); font: 600 10px var(--mono); letter-spacing: .11em; }
 .signal-line code { color: var(--phosphor); }
