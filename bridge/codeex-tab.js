@@ -1,5 +1,5 @@
 (() => {
-  const runtimeVersion = '0.6.1';
+  const runtimeVersion = '0.7.0';
   const previousBootstrap = window.__CODEEX_TAB_BOOTSTRAP__;
   if (previousBootstrap?.version === runtimeVersion) return;
   previousBootstrap?.dispose?.();
@@ -8,6 +8,7 @@
   const groupSelector = '[role="group"][aria-label="Plugin directory"]';
   const hiddenAttribute = 'data-codeex-tab-hidden';
   const handledAttribute = 'data-codeex-tab-handled';
+  const panelExtensions = new Map();
   const state = {
     active: false,
     busyPluginId: null,
@@ -30,6 +31,7 @@
     inspect: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z"/><circle cx="12" cy="12" r="2.8"/></svg>',
     daemon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5"/></svg>',
     archive: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/></svg>',
+    prompt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v10H9l-4 4V5Z"/><path d="M8 9h8M8 12h5"/></svg>',
     shield: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.7 2.8 8.1 7 10 4.2-1.9 7-5.3 7-10V6l-7-3Z"/><path d="m9.2 12 1.8 1.8 3.8-4"/></svg>',
   };
   const nativeClasses = {
@@ -96,8 +98,13 @@
         ...(init?.headers || {}),
       },
     }).then(async (response) => {
-      if (!response.ok) throw new Error((await response.text()) || `Request failed (${response.status})`);
-      return response.json();
+      const text = await response.text();
+      let payload = null;
+      try { payload = text ? JSON.parse(text) : null; } catch {}
+      if (!response.ok) {
+        throw new Error(payload?.error || text || `Request failed (${response.status})`);
+      }
+      return payload;
     });
   }
 
@@ -256,6 +263,17 @@
     panel.append(gridWrap);
     filterCards();
 
+    for (const [extensionId, renderExtension] of panelExtensions) {
+      try {
+        const extension = renderExtension({ status: state.status });
+        if (!(extension instanceof Element)) continue;
+        extension.dataset.codeexPanelExtension = extensionId;
+        panel.append(extension);
+      } catch (error) {
+        console.error(`Codeex panel extension ${extensionId} failed`, error);
+      }
+    }
+
     if (state.status.restartRequired) {
       const banner = document.createElement('div');
       banner.className = 'codeex-restart-row flex min-h-[var(--height-token-row)] items-center gap-3 px-2 pt-3';
@@ -280,13 +298,18 @@
   }
 
   async function refreshStatus() {
+    let shouldRender = state.status == null || state.error != null;
     try {
-      state.status = await controlRequest('/api/status');
+      const nextStatus = await controlRequest('/api/status');
+      shouldRender ||= JSON.stringify(nextStatus) !== JSON.stringify(state.status);
+      state.status = nextStatus;
       state.error = null;
     } catch (error) {
-      state.error = error instanceof Error ? error.message : String(error);
+      const nextError = error instanceof Error ? error.message : String(error);
+      shouldRender ||= state.error !== nextError;
+      state.error = nextError;
     }
-    renderPanel();
+    if (shouldRender) renderPanel();
   }
 
   async function setPluginInstalled(plugin) {
@@ -435,6 +458,7 @@
     observer?.disconnect();
     document.removeEventListener('DOMContentLoaded', syncMount);
     deactivateCodeex(document.querySelector('[data-codeex-tab]'));
+    panelExtensions.clear();
     document.querySelector('[data-codeex-tab]')?.remove();
     style.remove();
     if (window.__CODEEX_TAB_BOOTSTRAP__ === controller) {
@@ -445,6 +469,20 @@
   controller = {
     version: runtimeVersion,
     get active() { return state.active; },
+    registerPanelExtension(id, renderer) {
+      if (typeof id !== 'string' || !id || typeof renderer !== 'function') {
+        throw new Error('Invalid Codeex panel extension.');
+      }
+      panelExtensions.set(id, renderer);
+      if (state.active) renderPanel();
+      return () => {
+        if (panelExtensions.get(id) !== renderer) return;
+        panelExtensions.delete(id);
+        if (state.active) renderPanel();
+      };
+    },
+    render: renderPanel,
+    request: controlRequest,
     dispose,
   };
   window.__CODEEX_TAB_BOOTSTRAP__ = controller;

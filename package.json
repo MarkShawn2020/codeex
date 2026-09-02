@@ -1,6 +1,6 @@
 {
   "name": "codeex",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Codeex: the full Codex Desktop experience with local plugins.",
@@ -20,12 +20,15 @@
     "launcher:server": "node scripts/launcher-server.mjs",
     "smoke": "node scripts/start.mjs --isolated --smoke",
     "smoke:daemonize": "node scripts/start.mjs --isolated --smoke --with-daemonize",
+    "smoke:prompt-config": "node scripts/start.mjs --isolated --smoke --with-prompt-config",
+    "smoke:safe-archive": "node scripts/start.mjs --isolated --smoke --with-safe-archive",
     "verify": "node scripts/verify.mjs",
     "plugins": "node scripts/plugins-cli.mjs",
     "test:core": "node scripts/self-test.mjs",
+    "test:plugins": "node --test plugins/*/*.test.mjs",
     "test:daemonize": "node scripts/test-daemonize.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm typecheck && node scripts/check-source.mjs && pnpm test:core"
+    "check": "pnpm typecheck && node scripts/check-source.mjs && pnpm test:core && pnpm test:plugins"
   },
   "devDependencies": {
     "@babel/parser": "^7.28.4",

@@ -1,0 +1,20 @@
+{
+  "id": "safe-archive",
+  "name": "Safe Archive",
+  "version": "0.1.0",
+  "description": "Explain external session ownership and defer archive until the active Codex writer releases the thread.",
+  "category": "Navigation",
+  "icon": "shield",
+  "entry": "./index.mjs",
+  "requiresRestart": true,
+  "permissions": [
+    {
+      "label": "Session ownership",
+      "detail": "Read local Codex thread metadata and active writer process status before archiving."
+    },
+    {
+      "label": "Deferred archive",
+      "detail": "Request thread archive through the bundled Codex app-server only after the active writer releases it."
+    }
+  ]
+}

@@ -30,6 +30,9 @@ for (const file of files) {
 const plugins = await discoverPlugins();
 if (!plugins.some((plugin) => plugin.id === 'lovinsp')) throw new Error('Lovinsp plugin missing.');
 if (!plugins.some((plugin) => plugin.id === 'daemonize')) throw new Error('Daemonize plugin missing.');
+if (!plugins.some((plugin) => plugin.id === 'safe-archive')) {
+  throw new Error('Safe Archive plugin missing.');
+}
 const codeexTab = await readFile(path.join(projectRoot, 'bridge', 'codeex-tab.js'), 'utf8');
 for (const nativeClass of [
   'flex flex-col gap-4',

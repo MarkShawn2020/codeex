@@ -1,10 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-09-02
+
+### 新功能
+
+- 新增 Prompt Config 插件：在 Codex 原生的指令链上分层配置 system、user、project 三级提示词，可读写 `config.toml` 的 `developer_instructions` 以及全局和所选项目的 AGENTS 指令文件。入口位于插件管理页和模型切换器旁。
+- 新增 Safe Archive 插件：归档仍被其他 Codex 客户端占用的会话时，不再直接失败，而是说明该会话正被谁占用，并可选择「稍后归档」——等活跃写入方释放线程后自动完成。对话框提供一键复制诊断信息。
 
 ### 修复
 
 - 修复后台启动器仍在、完整 Codex 运行体已退出时，重新打开 Codeex 或执行 `npx lovstudio app codeex start` 不会恢复窗口却误报成功的问题；显式打开现在会重新拉起并激活运行体，CLI 也会等到运行体真实存活后再报告成功。
+- 修复 Codeex Dev 将 Vite 配置文件的只读访问误判为源码变化、反复终止并重启运行体的问题；切换到 `codeex` 项目不再表现为闪退。
+- Prompt Config 只在插件管理页和模型切换器旁提供配置入口，不再重复注入新任务页右侧的 Environment 悬浮区。
+- 修复官方 Codex 更新后重新分包生产代码时，Safe Archive 因为改写点被拆分到不同 chunk 而拒绝构建、导致应用无法启动的问题；插桩现在按内容定位改写点，不再假设它们同属一个 chunk。
+
+### 分发
+
+- 继续支持 Apple Silicon、macOS 13 或更高版本。
+- 安装 Codeex 前需要已安装并至少启动一次官方 Codex（`/Applications/ChatGPT.app`）。
 
 ### 开发
 

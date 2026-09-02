@@ -3,21 +3,30 @@ import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { startControlServer } from './control-server.mjs';
+import { reuseExistingControl } from './control-auth.mjs';
 import { projectRoot } from './paths.mjs';
 import {
   parseDeveloperIdIdentities,
   resolveCodeSigningIdentity,
 } from './code-signing.mjs';
 import {
+  createDevWatchTargets,
+  describeDevWatchChange,
   createDevEnvironment,
   defaultDevtoolsPort,
   defaultLovinspPort,
   devBundleIdentifier,
   devDisplayName,
+  resolveDevRoot,
 } from './dev-environment.mjs';
 import { detectFullDiskAccess } from './macos-permissions.mjs';
 import { launcherInfoPlist } from './launcher-plist.mjs';
 import { createRuntimeEnvironment } from './runtime-environment.mjs';
+import {
+  assertRequiredPrivacyUsageDescriptions,
+  hasMatchingPrivacyUsageDescriptions,
+  privacyUsageDescriptions,
+} from './privacy-usage.mjs';
 import {
   isSupervisorAttached,
   parseSupervisorPid,
@@ -30,6 +39,7 @@ let restartRequests = 0;
 let launchRequests = 0;
 let fullDiskAccessSettingsRequests = 0;
 const control = await startControlServer({
+  authToken: '1'.repeat(64),
   stateFile,
   getActivePluginIds: () => activePluginIds,
   isolated: true,
@@ -55,19 +65,33 @@ async function request(route, method = 'GET') {
 }
 
 try {
-  const devEnvironment = createDevEnvironment({ PATH: '/usr/bin' }, projectRoot);
+  const fakeHome = path.join(temporary, 'home');
+  const expectedDevRoot = path.join(
+    fakeHome,
+    'Library',
+    'Application Support',
+    'Codeex Dev',
+  );
+  const devEnvironment = createDevEnvironment(
+    { PATH: '/usr/bin' },
+    projectRoot,
+    fakeHome,
+  );
   assert.equal(devEnvironment.CODEEX_RUNTIME_BUNDLE_IDENTIFIER, devBundleIdentifier);
   assert.equal(devEnvironment.CODEEX_RUNTIME_DISPLAY_NAME, devDisplayName);
   assert.equal(devEnvironment.CODEEX_DEVTOOLS_PORT, String(defaultDevtoolsPort));
   assert.equal(devEnvironment.CODEEX_LOVINSP_PORT, String(defaultLovinspPort));
   assert.equal(
     devEnvironment.CODEEX_RUNTIME_ROOT,
-    path.join(projectRoot, '.runtime', 'dev', 'runtime'),
+    path.join(expectedDevRoot, 'runtime'),
   );
   assert.equal(
     devEnvironment.CODEEX_UPSTREAM_ROOT,
-    path.join(projectRoot, '.runtime', 'dev', 'upstream'),
+    path.join(expectedDevRoot, 'upstream'),
   );
+  assert.equal(resolveDevRoot({}, fakeHome), expectedDevRoot);
+  assert.equal(resolveDevRoot({ CODEEX_DEV_ROOT: '/tmp/codeex-dev' }, fakeHome), '/tmp/codeex-dev');
+  assert.equal(expectedDevRoot.startsWith(`${projectRoot}${path.sep}`), false);
   assert.equal(devEnvironment.PATH, '/usr/bin');
   const overriddenDevEnvironment = createDevEnvironment({
     CODEEX_RUNTIME_ROOT: '/tmp/must-not-be-reused',
@@ -81,6 +105,51 @@ try {
   assert.equal(overriddenDevEnvironment.CODEEX_UPSTREAM_ROOT, '/tmp/codeex-dev-upstream');
   assert.equal(overriddenDevEnvironment.CODEEX_DEVTOOLS_PORT, '10433');
   assert.equal(overriddenDevEnvironment.CODEEX_LOVINSP_PORT, '10778');
+  const devWatchTargets = createDevWatchTargets(projectRoot);
+  const viteWatchTarget = devWatchTargets.find((target) => target.filename === 'vite.config.ts');
+  assert.deepEqual(viteWatchTarget, {
+    path: projectRoot,
+    recursive: false,
+    filename: 'vite.config.ts',
+  });
+  assert.equal(
+    describeDevWatchChange(viteWatchTarget, 'vite.config.ts'),
+    path.join(path.basename(projectRoot), 'vite.config.ts'),
+  );
+  assert.equal(describeDevWatchChange(viteWatchTarget, 'package.json'), null);
+  assert.equal(describeDevWatchChange(devWatchTargets[0], 'main.tsx'), 'bridge/main.tsx');
+
+  const privacyFixture = {
+    NSMicrophoneUsageDescription: 'Microphone access',
+    NSCameraUsageDescription: 'Camera access',
+    NSHumanReadableCopyright: 'Not a usage description',
+  };
+  assert.deepEqual(privacyUsageDescriptions(privacyFixture), {
+    NSMicrophoneUsageDescription: 'Microphone access',
+    NSCameraUsageDescription: 'Camera access',
+  });
+  assertRequiredPrivacyUsageDescriptions(privacyFixture, 'Fixture app');
+  assert.equal(
+    hasMatchingPrivacyUsageDescriptions(
+      privacyUsageDescriptions(privacyFixture),
+      { ...privacyFixture, CFBundleIdentifier: 'ai.lovstudio.codeex.runtime' },
+    ),
+    true,
+  );
+  assert.equal(
+    hasMatchingPrivacyUsageDescriptions(
+      privacyUsageDescriptions(privacyFixture),
+      { ...privacyFixture, NSMicrophoneUsageDescription: '' },
+    ),
+    false,
+  );
+  assert.throws(
+    () => assertRequiredPrivacyUsageDescriptions(
+      { NSCameraUsageDescription: 'Camera access' },
+      'Broken app',
+    ),
+    /NSMicrophoneUsageDescription/,
+  );
 
   const runtimeEnvironment = createRuntimeEnvironment({
     __CFBundleIdentifier: 'ai.lovstudio.codeex',
@@ -111,13 +180,19 @@ try {
   assert.doesNotMatch(launcherSource, /showFullDiskAccessGuidanceIfNeeded/);
   assert.doesNotMatch(launcherSource, /CodeexFullDiskAccessGuidanceVersion/);
   assert.match(launcherSource, /applicationShouldHandleReopen/);
-  assert.match(launcherSource, /private func activateRuntime\(attemptsRemaining:/);
+  assert.match(launcherSource, /private func activateRuntime\(\s*attemptsRemaining:/);
   assert.match(launcherSource, /showCodeex\(\)/);
   const runtimeManagerSource = await readFile(
     path.join(projectRoot, 'scripts', 'runtime-manager.mjs'),
     'utf8',
   );
   assert.doesNotMatch(runtimeManagerSource, /spawnSync\('\/usr\/bin\/open'/);
+  const startSource = await readFile(
+    path.join(projectRoot, 'scripts', 'start.mjs'),
+    'utf8',
+  );
+  assert.match(startSource, /run\(process\.execPath, \['scripts\/prepare-codex\.mjs'\]/);
+  assert.doesNotMatch(startSource, /!managedWrapper \|\| !existsSync\(cloneApp\)/);
   const openLauncherSource = await readFile(
     path.join(projectRoot, 'scripts', 'open-launcher.mjs'),
     'utf8',
@@ -183,6 +258,7 @@ try {
   assert.equal(initial.plugins.find((plugin) => plugin.id === 'archive-sidebar').installed, false);
   assert.equal(initial.plugins.find((plugin) => plugin.id === 'lovinsp').installed, true);
   assert.equal(initial.plugins.find((plugin) => plugin.id === 'daemonize').installed, false);
+  assert.equal(initial.plugins.find((plugin) => plugin.id === 'safe-archive').installed, false);
   const installed = await request('/api/plugins/daemonize/install', 'POST');
   assert.equal(installed.restartRequired, true);
   assert.equal(installed.plugins.find((plugin) => plugin.id === 'daemonize').installed, true);
@@ -194,8 +270,21 @@ try {
   await request('/api/restart', 'POST');
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(restartRequests, 1);
-  await request('/api/launch', 'POST');
+  const reused = await reuseExistingControl({
+    schemaVersion: 1,
+    port: control.port,
+    token: control.token,
+  });
+  assert.equal(reused.port, control.port);
+  assert.match(reused.url, new RegExp(`^http://127\\.0\\.0\\.1:${control.port}/\\?`));
   assert.equal(launchRequests, 1);
+  assert.equal(await reuseExistingControl({
+    schemaVersion: 1,
+    port: control.port,
+    token: '0'.repeat(64),
+  }), null);
+  await request('/api/launch', 'POST');
+  assert.equal(launchRequests, 2);
   await request('/api/permissions/full-disk-access/open-settings', 'POST');
   assert.equal(fullDiskAccessSettingsRequests, 1);
   console.log('✓ Plugin state, authenticated control API, and launch/restart handoff passed');

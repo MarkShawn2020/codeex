@@ -1,0 +1,16 @@
+{
+  "id": "prompt-config",
+  "name": "Prompt Config",
+  "version": "0.2.0",
+  "description": "Configure system, user, and project instruction levels through Codex's native prompt chain.",
+  "category": "Developer tools",
+  "icon": "prompt",
+  "entry": "./index.mjs",
+  "requiresRestart": true,
+  "permissions": [
+    {
+      "label": "Prompt configuration",
+      "detail": "Read and update developer_instructions in config.toml plus global and selected-project AGENTS instruction files."
+    }
+  ]
+}

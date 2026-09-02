@@ -22,6 +22,11 @@ import {
   upstreamApp,
   upstreamRoot,
 } from './paths.mjs';
+import {
+  assertRequiredPrivacyUsageDescriptions,
+  hasMatchingPrivacyUsageDescriptions,
+  privacyUsageDescriptions,
+} from './privacy-usage.mjs';
 
 async function exists(target) {
   try {
@@ -40,10 +45,25 @@ function run(command, args) {
   }
 }
 
+function readInfoPlist(plist) {
+  const result = spawnSync(
+    '/usr/bin/plutil',
+    ['-convert', 'json', '-o', '-', plist],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    const detail = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    throw new Error(`Unable to read Info.plist at ${plist}${detail ? `\n${detail}` : ''}`);
+  }
+  return JSON.parse(result.stdout);
+}
+
 async function readFingerprint() {
   const archiveStat = await stat(officialArchive);
   const packaged = JSON.parse(extractFile(officialArchive, 'package.json').toString());
   const officialPlist = path.join(officialApp, 'Contents', 'Info.plist');
+  const officialInfo = readInfoPlist(officialPlist);
+  assertRequiredPrivacyUsageDescriptions(officialInfo, 'Official Codex app');
   const displayName = spawnSync(
     '/usr/libexec/PlistBuddy',
     ['-c', 'Print :CFBundleDisplayName', officialPlist],
@@ -57,6 +77,7 @@ async function readFingerprint() {
     buildFlavor: packaged.codexBuildFlavor,
     buildNumber: packaged.codexBuildNumber,
     displayName,
+    privacyUsageDescriptions: privacyUsageDescriptions(officialInfo),
   };
 }
 
@@ -75,6 +96,7 @@ async function isCurrent(fingerprint) {
       ['-c', 'Print :CFBundleIdentifier', path.join(cloneApp, 'Contents', 'Info.plist')],
       { encoding: 'utf8' },
     );
+    const cloneInfo = readInfoPlist(path.join(cloneApp, 'Contents', 'Info.plist'));
     return (
       JSON.stringify(previous.fingerprint) === JSON.stringify(fingerprint) &&
       (await exists(path.join(sourceWebview, 'index.html'))) &&
@@ -83,6 +105,10 @@ async function isCurrent(fingerprint) {
       Boolean(statFile(cloneArchive, 'webview/index.html').unpacked) &&
       displayName.stdout.trim() === runtimeDisplayName &&
       bundleIdentifier.stdout.trim() === runtimeBundleIdentifier &&
+      hasMatchingPrivacyUsageDescriptions(
+        fingerprint.privacyUsageDescriptions,
+        cloneInfo,
+      ) &&
       previous.asarHash === (await sha256(cloneArchive))
     );
   } catch {
@@ -176,6 +202,14 @@ async function prepare() {
   setPlistValue(plist, 'CFBundleDisplayName', runtimeDisplayName);
   setPlistValue(plist, 'CFBundleName', runtimeDisplayName);
   setPlistValue(plist, 'CFBundleIconFile', 'Codeex.icns');
+  if (
+    !hasMatchingPrivacyUsageDescriptions(
+      fingerprint.privacyUsageDescriptions,
+      readInfoPlist(plist),
+    )
+  ) {
+    throw new Error('Prepared Codeex clone did not preserve privacy usage descriptions.');
+  }
   await copyFile(productIcon, path.join(cloneResources, 'Codeex.icns'));
 
   const asarHash = await sha256(path.join(cloneResources, 'app.asar'));

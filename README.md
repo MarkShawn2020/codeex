@@ -1,6 +1,6 @@
 # Codeex
 
-Codeex 0.4.1 是支持本地插件的完整 Codex Desktop。打开 `/Applications/Codeex.app`
+Codeex 0.5.0 是支持本地插件的完整 Codex Desktop。打开 `/Applications/Codeex.app`
 会直接进入熟悉的 Codex 界面，可正常创建任务、运行 Agent、操作代码以及使用
 Skills 和 MCP；插件中心只是同一应用菜单栏中的辅助窗口，不再是必须经过的启动页。
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -21,6 +21,7 @@ import { startControlServer } from './control-server.mjs';
 import {
   verifyArchiveSidebarNavigation,
   verifyPluginManagement,
+  verifyPromptConfiguration,
   verifyRuntime,
   verifyStaticBuild,
 } from './verify.mjs';
@@ -34,6 +35,8 @@ const smoke = process.argv.includes('--smoke');
 const noLaunch = process.argv.includes('--no-launch');
 const withDaemonize = process.argv.includes('--with-daemonize');
 const withArchiveSidebar = process.argv.includes('--with-archive-sidebar');
+const withPromptConfig = process.argv.includes('--with-prompt-config');
+const withSafeArchive = process.argv.includes('--with-safe-archive');
 const managedWrapper = process.argv.includes('--managed-wrapper');
 const devMode = process.argv.includes('--dev');
 const isolated = process.argv.includes('--isolated') || devMode;
@@ -45,6 +48,7 @@ let isolatedControl = null;
 let activePluginIds = [];
 let restarting = false;
 let isolatedCodexHome = null;
+let isolatedPromptProject = null;
 
 function baseEnvironment() {
   return {
@@ -122,6 +126,21 @@ async function stopProcess(child) {
     new Promise((resolve) => child.once('exit', resolve)),
     new Promise((resolve) => setTimeout(resolve, 2_000)),
   ]);
+}
+
+async function removeIsolatedDirectory(target) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await rm(target, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(error?.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError;
 }
 
 function signClone(signingPlan) {
@@ -269,7 +288,7 @@ async function stopAll() {
       env: baseEnvironment(),
       stdio: 'ignore',
     });
-    await rm(isolatedCodexHome, { recursive: true, force: true });
+    await removeIsolatedDirectory(isolatedCodexHome);
     isolatedCodexHome = null;
   }
 }
@@ -288,9 +307,10 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 async function main() {
-  if (!managedWrapper || !existsSync(cloneApp)) {
-    run(process.execPath, ['scripts/prepare-codex.mjs'], { inherit: true });
-  }
+  // Preparation is fingerprinted and cheap when current. Running it for the
+  // managed wrapper prevents an older cloned app from surviving an official
+  // Codex update with stale Info.plist privacy declarations or native assets.
+  run(process.execPath, ['scripts/prepare-codex.mjs'], { inherit: true });
   if (isolated) {
     if (devMode) {
       if (!existsSync(stateFile)) {
@@ -301,12 +321,25 @@ async function main() {
       const isolatedPluginIds = ['lovinsp'];
       if (withArchiveSidebar) isolatedPluginIds.unshift('archive-sidebar');
       if (withDaemonize) isolatedPluginIds.unshift('daemonize');
+      if (withPromptConfig) isolatedPluginIds.unshift('prompt-config');
+      if (withSafeArchive) isolatedPluginIds.unshift('safe-archive');
       await writePluginState({
         schemaVersion: 1,
         installed: isolatedPluginIds,
       }, stateFile);
     }
-    if (withDaemonize) isolatedCodexHome = await mkdtemp('/tmp/lcd-smoke-');
+    if (withDaemonize || withPromptConfig) {
+      isolatedCodexHome = await mkdtemp('/tmp/codeex-smoke-');
+    }
+    if (withPromptConfig) {
+      isolatedPromptProject = path.join(isolatedCodexHome, 'prompt-project');
+      await mkdir(isolatedPromptProject, { recursive: true });
+      isolatedPromptProject = await realpath(isolatedPromptProject);
+      await writeFile(
+        path.join(isolatedCodexHome, 'config.toml'),
+        `[projects.${JSON.stringify(isolatedPromptProject)}]\ntrust_level = "trusted"\n`,
+      );
+    }
     isolatedControl = await startControlServer({
       stateFile,
       getActivePluginIds: () => activePluginIds,
@@ -326,6 +359,8 @@ async function main() {
     runtime = await verifyRuntime({
       expectArchiveSidebar,
       expectLovinsp: plugins.some((plugin) => plugin.id === 'lovinsp'),
+      expectPromptConfig: plugins.some((plugin) => plugin.id === 'prompt-config'),
+      expectSafeArchive: plugins.some((plugin) => plugin.id === 'safe-archive'),
     });
   } catch (error) {
     if (smoke) throw error;
@@ -347,6 +382,12 @@ async function main() {
     console.log(
       `  Archive Sidebar: ${runtime.archiveSidebarLabel} follows ${runtime.archiveSidebarPreviousLabel}`,
     );
+  }
+  if (runtime?.promptConfig) {
+    console.log('  Prompt Config: system, user, and project configuration UI is active');
+  }
+  if (runtime?.safeArchive) {
+    console.log(`  Safe Archive: active-writer handling ${runtime.safeArchiveVersion} is active`);
   }
   if (smoke && expectArchiveSidebar) {
     const archiveNavigation = await verifyArchiveSidebarNavigation();
@@ -383,8 +424,37 @@ async function main() {
     );
   }
 
+  if (smoke && withPromptConfig) {
+    const catalog = await discoverPlugins();
+    const management = await verifyPluginManagement({
+      expectedPluginIds: catalog.map((plugin) => plugin.id),
+      pluginId: 'prompt-config',
+    });
+    const restoredState = await readPluginState(stateFile);
+    if (!restoredState.installed.includes('prompt-config')) {
+      throw new Error('Prompt Config management exercise did not restore desired state.');
+    }
+    const prompt = await verifyPromptConfiguration({ projectPath: isolatedPromptProject });
+    const systemConfig = await readFile(path.join(isolatedCodexHome, 'config.toml'), 'utf8');
+    const userAgents = await readFile(path.join(isolatedCodexHome, 'AGENTS.md'), 'utf8');
+    const projectAgents = await readFile(path.join(isolatedPromptProject, 'AGENTS.md'), 'utf8');
+    if (
+      !systemConfig.includes(prompt.systemPrompt) ||
+      userAgents !== prompt.userPrompt ||
+      projectAgents !== prompt.projectPrompt
+    ) {
+      throw new Error('Prompt Config UI did not round-trip all three native instruction levels.');
+    }
+    console.log(
+      `✓ Prompt Config rendered with ${management.pluginIds.length} plugins and saved system/user/project prompts`,
+    );
+  }
+
   if (smoke) {
     await stopAll();
+    // Packaged Electron can leave native helper handles attached after its main
+    // process exits. A smoke run has no interactive work left at this point.
+    process.exit(0);
   } else {
     console.log('Codeex is running with the full Codex interface. Plugin management is available from the Codeex menu.');
   }

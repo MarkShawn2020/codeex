@@ -4,7 +4,7 @@ import {
   pluginStateFile,
 } from './paths.mjs';
 import { startControlServer } from './control-server.mjs';
-import { ensureControlAuth } from './control-auth.mjs';
+import { ensureControlAuth, reuseExistingControl } from './control-auth.mjs';
 import {
   enhancedCodexStatus,
   launchEnhancedCodex,
@@ -26,6 +26,13 @@ async function main() {
     throw new Error('Managed Codeex is missing its supervisor process identity.');
   }
   const auth = wrapperMode ? await ensureControlAuth() : null;
+  if (auth) {
+    const existing = await reuseExistingControl(auth);
+    if (existing) {
+      process.stdout.write(`${JSON.stringify({ ...existing, reused: true })}\n`);
+      return;
+    }
+  }
   const control = await startControlServer({
     stateFile: pluginStateFile,
     getActivePluginIds: () => [],

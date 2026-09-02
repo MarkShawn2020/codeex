@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 
 export const devBundleIdentifier = 'ai.lovstudio.codeex.dev';
@@ -5,8 +6,38 @@ export const devDisplayName = 'Codeex Dev';
 export const defaultDevtoolsPort = 9433;
 export const defaultLovinspPort = 5778;
 
-export function createDevEnvironment(source, projectRoot) {
-  const devRoot = path.join(projectRoot, '.runtime', 'dev');
+export function createDevWatchTargets(projectRoot) {
+  return [
+    { path: path.join(projectRoot, 'bridge'), recursive: true },
+    { path: path.join(projectRoot, 'marketplace'), recursive: true },
+    { path: path.join(projectRoot, 'plugins'), recursive: true },
+    { path: path.join(projectRoot, 'scripts'), recursive: true },
+    // Watching this file directly on macOS emits a change event when Vite's
+    // config runner merely opens it. Watch the containing directory and filter
+    // by filename so a read cannot terminate a healthy Codeex Dev runtime.
+    { path: projectRoot, recursive: false, filename: 'vite.config.ts' },
+  ];
+}
+
+export function describeDevWatchChange(target, filename) {
+  const changed = filename == null ? '' : String(filename);
+  if (target.filename && changed !== target.filename) return null;
+  return changed ? path.join(path.basename(target.path), changed) : target.path;
+}
+
+export function resolveDevRoot(source = process.env, homeDirectory = os.homedir()) {
+  return path.resolve(
+    source.CODEEX_DEV_ROOT ||
+      path.join(homeDirectory, 'Library', 'Application Support', 'Codeex Dev'),
+  );
+}
+
+export function createDevEnvironment(
+  source,
+  projectRoot,
+  homeDirectory = os.homedir(),
+) {
+  const devRoot = resolveDevRoot(source, homeDirectory);
   return {
     ...source,
     CODEEX_RUNTIME_ROOT:

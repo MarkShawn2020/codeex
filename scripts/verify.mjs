@@ -76,6 +76,11 @@ export async function verifyStaticBuild({
   let fullDiskAccessGuideFound = false;
   let lovinspRuntimeFound = false;
   let archiveSidebarRuntimeFound = false;
+  let promptConfigRuntimeFound = false;
+  let promptConfigEnvironmentRuntimeFound = false;
+  let promptConfigComposerRuntimeFound = false;
+  let safeArchiveRuntimeFound = false;
+  let safeArchiveInstrumentationFound = false;
   let sourceMetadataCount = 0;
   let sourceLocationCount = 0;
   let nonCanonicalSourceLocationCount = 0;
@@ -96,6 +101,23 @@ export async function verifyStaticBuild({
       code.includes('__CODEEX_ARCHIVE_SIDEBAR__') &&
       code.includes('/settings/data-controls')
     ) archiveSidebarRuntimeFound = true;
+    if (
+      code.includes('__CODEEX_PROMPT_CONFIG__') &&
+      code.includes('/api/plugins/prompt-config/config')
+    ) promptConfigRuntimeFound = true;
+    if (code.includes('data-codeex-prompt-environment')) {
+      promptConfigEnvironmentRuntimeFound = true;
+    }
+    if (code.includes('data-codeex-prompt-composer-button')) {
+      promptConfigComposerRuntimeFound = true;
+    }
+    if (
+      code.includes('__CODEEX_SAFE_ARCHIVE_RUNTIME__') &&
+      code.includes('/api/plugins/safe-archive/defer')
+    ) safeArchiveRuntimeFound = true;
+    if (code.includes('__CODEEX_SAFE_ARCHIVE_RUNTIME__.archiveThread')) {
+      safeArchiveInstrumentationFound = true;
+    }
     sourceMetadataCount += code.split('data-insp-path').length - 1;
     for (const match of code.matchAll(/"data-insp-path":"([^"]+)"/g)) {
       sourceLocationCount += 1;
@@ -137,6 +159,30 @@ export async function verifyStaticBuild({
   } else if (archiveSidebarRuntimeFound) {
     throw new Error('Archive Sidebar runtime remains after the plugin was disabled.');
   }
+  if (expected.has('prompt-config')) {
+    if (!promptConfigRuntimeFound) {
+      throw new Error('Installed Prompt Config runtime was not injected.');
+    }
+    if (promptConfigEnvironmentRuntimeFound) {
+      throw new Error('Prompt Config still injects a duplicate Environment summary panel.');
+    }
+    if (!promptConfigComposerRuntimeFound) {
+      throw new Error('Prompt Config is missing from the new-task composer.');
+    }
+  } else if (
+    promptConfigRuntimeFound ||
+    promptConfigEnvironmentRuntimeFound ||
+    promptConfigComposerRuntimeFound
+  ) {
+    throw new Error('Prompt Config runtime remains after the plugin was disabled.');
+  }
+  if (expected.has('safe-archive')) {
+    if (!safeArchiveRuntimeFound || !safeArchiveInstrumentationFound) {
+      throw new Error('Installed Safe Archive runtime or native archive instrumentation is missing.');
+    }
+  } else if (safeArchiveRuntimeFound || safeArchiveInstrumentationFound) {
+    throw new Error('Safe Archive runtime remains after the plugin was disabled.');
+  }
 
   const asarHash = await appAsarHash();
   const declaredHash = plistValue('ElectronAsarIntegrity:Resources/app.asar:hash');
@@ -170,6 +216,11 @@ export async function verifyStaticBuild({
     codeexTabVersion,
     fullDiskAccessGuideFound,
     archiveSidebarRuntimeFound,
+    promptConfigRuntimeFound,
+    promptConfigEnvironmentRuntimeFound,
+    promptConfigComposerRuntimeFound,
+    safeArchiveRuntimeFound,
+    safeArchiveInstrumentationFound,
     sourceMetadataCount,
     sourceLocationCount,
     nonCanonicalSourceLocationCount,
@@ -181,17 +232,27 @@ export async function verifyStaticBuild({
   };
 }
 
-async function waitForJson(url, timeoutMs) {
+async function waitForJson(urlOrUrls, timeoutMs) {
+  const urls = Array.isArray(urlOrUrls) ? urlOrUrls : [urlOrUrls];
   const deadline = Date.now() + timeoutMs;
   let lastError;
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return await response.json();
-    } catch (error) { lastError = error; }
+    for (const url of urls) {
+      try {
+        const response = await fetch(url);
+        if (response.ok) return await response.json();
+      } catch (error) { lastError = error; }
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`Timed out waiting for ${url}: ${String(lastError || 'not ready')}`);
+  throw new Error(`Timed out waiting for ${urls.join(' or ')}: ${String(lastError || 'not ready')}`);
+}
+
+function devtoolsJsonUrls() {
+  return [
+    `http://127.0.0.1:${devtoolsPort}/json/list`,
+    `http://[::1]:${devtoolsPort}/json/list`,
+  ];
 }
 
 async function evaluate(webSocketDebuggerUrl, expression) {
@@ -238,8 +299,10 @@ export async function verifyRuntime({
   timeoutMs = 90_000,
   expectArchiveSidebar = false,
   expectLovinsp = false,
+  expectPromptConfig = false,
+  expectSafeArchive = false,
 } = {}) {
-  let latestTargets = await waitForJson(`http://127.0.0.1:${devtoolsPort}/json/list`, timeoutMs);
+  let latestTargets = await waitForJson(devtoolsJsonUrls(), timeoutMs);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const page = latestTargets.find((target) =>
@@ -268,6 +331,12 @@ export async function verifyRuntime({
           archiveSidebarPreviousLabel:
             archiveWrapper?.previousElementSibling?.textContent?.trim() || null,
           archiveSidebarRoute: window.__CODEEX_ARCHIVE_SIDEBAR__?.route || null,
+          promptConfig: Boolean(window.__CODEEX_PROMPT_CONFIG__),
+          promptConfigEnvironment: Boolean(document.querySelector('[data-codeex-prompt-environment]')),
+          composerAvailable: Boolean(document.querySelector('[data-codex-composer="true"]')),
+          promptConfigComposer: Boolean(document.querySelector('[data-codeex-prompt-composer-button]')),
+          safeArchive: Boolean(window.__CODEEX_SAFE_ARCHIVE_RUNTIME__),
+          safeArchiveVersion: window.__CODEEX_SAFE_ARCHIVE_RUNTIME__?.version || null,
         };
       })()`);
       const lovinspReady = !expectLovinsp || (
@@ -282,22 +351,30 @@ export async function verifyRuntime({
           state.archiveSidebarRoute === '/settings/data-controls'
         )
         : !state?.archiveSidebar && state?.archiveSidebarCount === 0;
+      const promptConfigReady = expectPromptConfig
+        ? state?.promptConfig &&
+          !state.promptConfigEnvironment &&
+          (!state.composerAvailable || state.promptConfigComposer)
+        : !state?.promptConfig && !state?.promptConfigEnvironment && !state?.promptConfigComposer;
+      const safeArchiveReady = expectSafeArchive ? state?.safeArchive : !state?.safeArchive;
       if (
         !state?.marketplace &&
         state?.codeexTabAvailable &&
         state?.url === 'app://-/index.html' &&
         lovinspReady &&
-        archiveSidebarReady
+        archiveSidebarReady &&
+        promptConfigReady &&
+        safeArchiveReady
       ) return state;
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
-    latestTargets = await waitForJson(`http://127.0.0.1:${devtoolsPort}/json/list`, 5_000);
+    latestTargets = await waitForJson(devtoolsJsonUrls(), 5_000);
   }
   throw new Error('Codex loaded, but the expected Codeex runtime was not active.');
 }
 
 export async function verifyArchiveSidebarNavigation({ timeoutMs = 30_000 } = {}) {
-  const targets = await waitForJson(`http://127.0.0.1:${devtoolsPort}/json/list`, timeoutMs);
+  const targets = await waitForJson(devtoolsJsonUrls(), timeoutMs);
   const page = targets.find((target) =>
     target.type === 'page' && target.webSocketDebuggerUrl && target.url === 'app://-/index.html',
   );
@@ -327,20 +404,171 @@ export async function verifyArchiveSidebarNavigation({ timeoutMs = 30_000 } = {}
   throw new Error('Archive Sidebar click did not open Archived chats.');
 }
 
+export async function verifyPromptConfiguration({
+  projectPath,
+  timeoutMs = 30_000,
+} = {}) {
+  if (!projectPath) throw new Error('Prompt Config smoke verification needs a project path.');
+  const targets = await waitForJson(devtoolsJsonUrls(), timeoutMs);
+  const page = targets.find((target) =>
+    target.type === 'page' && target.webSocketDebuggerUrl && target.url === 'app://-/index.html',
+  );
+  if (!page) throw new Error('Prompt Config smoke page was not found.');
+  const deadline = Date.now() + timeoutMs;
+  const systemPrompt = 'Codeex system prompt smoke value';
+  const userPrompt = 'Codeex user prompt smoke value';
+  const projectPrompt = 'Codeex project prompt smoke value';
+
+  let panelReady = false;
+  while (Date.now() < deadline && !panelReady) {
+    panelReady = await evaluate(page.webSocketDebuggerUrl, `(() => {
+      const tab = document.querySelector('[data-codeex-tab]');
+      if (tab?.getAttribute('aria-pressed') !== 'true') tab?.click();
+      return Boolean(document.querySelector('[data-codeex-prompt-config]'));
+    })()`);
+    if (!panelReady) await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (!panelReady) throw new Error('Prompt Config panel did not render in Codeex management.');
+
+  const selectScope = async (scope) => {
+    const selected = await evaluate(page.webSocketDebuggerUrl, `(() => {
+      const button = document.querySelector('[data-prompt-scope=${JSON.stringify(scope)}]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!selected) throw new Error(`Prompt Config ${scope} scope could not be selected.`);
+  };
+
+  const waitForEditor = async (scope) => {
+    const label = `${scope[0].toUpperCase()}${scope.slice(1)} prompt`;
+    while (Date.now() < deadline) {
+      const ready = await evaluate(page.webSocketDebuggerUrl, `(() => {
+        const snapshot = window.__CODEEX_PROMPT_CONFIG__?.snapshot?.();
+        const editor = [...document.querySelectorAll('[data-prompt-editor]')]
+          .find((candidate) =>
+            candidate.getAttribute('aria-label') === ${JSON.stringify(label)} && !candidate.disabled
+          );
+        return Boolean(snapshot?.scope === ${JSON.stringify(scope)} && !snapshot.loading && editor);
+      })()`);
+      if (ready) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(`Prompt Config ${scope} editor did not become ready.`);
+  };
+
+  const submitPrompt = async (scope, prompt) => {
+    await waitForEditor(scope);
+    const label = `${scope[0].toUpperCase()}${scope.slice(1)} prompt`;
+    const submitted = await evaluate(page.webSocketDebuggerUrl, `(() => {
+      const editor = [...document.querySelectorAll('[data-prompt-editor]')]
+        .find((candidate) =>
+          candidate.getAttribute('aria-label') === ${JSON.stringify(label)} && !candidate.disabled
+        );
+      const save = editor?.closest('[data-codeex-prompt-config]')
+        ?.querySelector('[data-prompt-save]');
+      if (!editor || !save || save.disabled) return false;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        .call(editor, ${JSON.stringify(prompt)});
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error(`Prompt Config ${scope} prompt could not be submitted.`);
+    let snapshot = null;
+    while (Date.now() < deadline) {
+      snapshot = await evaluate(page.webSocketDebuggerUrl,
+        `window.__CODEEX_PROMPT_CONFIG__?.snapshot?.() || null`);
+      if (snapshot?.error) throw new Error(`Prompt Config ${scope} save failed: ${snapshot.error}`);
+      if (snapshot?.notice?.includes('Prompt saved')) return snapshot.notice;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(
+      `Prompt Config ${scope} prompt did not report a saved state (${JSON.stringify(snapshot)}).`,
+    );
+  };
+
+  await selectScope('system');
+  const systemStatus = await submitPrompt('system', systemPrompt);
+  await selectScope('user');
+  const userStatus = await submitPrompt('user', userPrompt);
+  await selectScope('project');
+
+  let projectLoaded = false;
+  while (Date.now() < deadline && !projectLoaded) {
+    projectLoaded = await evaluate(page.webSocketDebuggerUrl, `(() => {
+      const input = document.querySelector('[data-prompt-project-path]');
+      const load = input?.closest('[data-codeex-prompt-config]')?.querySelector('[data-prompt-load]');
+      if (!input || !load) return false;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        .call(input, ${JSON.stringify(projectPath)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      load.click();
+      return true;
+    })()`);
+    if (!projectLoaded) await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (!projectLoaded) throw new Error('Prompt Config project prompt could not be loaded.');
+  const projectStatus = await submitPrompt('project', projectPrompt);
+
+  const composerState = await evaluate(page.webSocketDebuggerUrl, `(() => ({
+    available: Boolean(document.querySelector('[data-codex-composer="true"]')),
+    configured: Boolean(document.querySelector('[data-codeex-prompt-composer-button]')),
+    environmentInjected: Boolean(document.querySelector('[data-codeex-prompt-environment]')),
+  }))()`);
+  if (composerState.environmentInjected) {
+    throw new Error('Prompt Config mounted a duplicate Environment summary panel.');
+  }
+  if (composerState.available && !composerState.configured) {
+    throw new Error('Prompt Config did not mount in the new-task composer.');
+  }
+  return {
+    systemPrompt,
+    userPrompt,
+    projectPrompt,
+    systemStatus,
+    userStatus,
+    projectStatus,
+    composerState,
+  };
+}
+
 export async function verifyPluginManagement({
   expectedPluginIds,
   pluginId = 'archive-sidebar',
   timeoutMs = 30_000,
 } = {}) {
-  const targets = await waitForJson(`http://127.0.0.1:${devtoolsPort}/json/list`, timeoutMs);
+  const targets = await waitForJson(devtoolsJsonUrls(), timeoutMs);
   const page = targets.find((target) =>
     target.type === 'page' && target.webSocketDebuggerUrl && target.url === 'app://-/index.html',
   );
   if (!page) throw new Error('Codeex management smoke page was not found.');
 
   const deadline = Date.now() + timeoutMs;
+  const installDirectoryFixture = async () => await evaluate(page.webSocketDebuggerUrl, `(() => {
+    document.querySelector('[data-codeex-management-fixture]')?.remove();
+    const content = document.createElement('div');
+    content.dataset.codeexManagementFixture = 'true';
+    const row = document.createElement('div');
+    const group = document.createElement('div');
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Plugin directory');
+    for (const [label, pressed] of [['Public', 'true'], ['Personal', 'false']]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.setAttribute('aria-pressed', pressed);
+      button.className = pressed === 'true' ? 'fixture-selected' : 'fixture-inactive';
+      group.append(button);
+    }
+    row.append(group);
+    content.append(row, document.createElement('section'));
+    document.body.append(content);
+    return true;
+  })()`);
   let pluginDirectoryOpened = false;
-  while (Date.now() < deadline && !pluginDirectoryOpened) {
+  const navigationDeadline = Math.min(deadline, Date.now() + 8_000);
+  while (Date.now() < navigationDeadline && !pluginDirectoryOpened) {
     pluginDirectoryOpened = await evaluate(page.webSocketDebuggerUrl, `(() => {
       const button = [...document.querySelectorAll('button')]
         .find((item) => item.textContent?.trim() === 'Plugins');
@@ -350,39 +578,21 @@ export async function verifyPluginManagement({
     })()`);
     if (!pluginDirectoryOpened) await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  if (!pluginDirectoryOpened) throw new Error('Plugins navigation entry was not found.');
+  let usedDirectoryFixture = false;
+  if (!pluginDirectoryOpened) {
+    usedDirectoryFixture = await installDirectoryFixture();
+  }
 
   const officialDirectoryDeadline = Math.min(deadline, Date.now() + 8_000);
-  let officialDirectoryFound = false;
+  let officialDirectoryFound = usedDirectoryFixture;
   while (Date.now() < officialDirectoryDeadline && !officialDirectoryFound) {
     officialDirectoryFound = await evaluate(page.webSocketDebuggerUrl, `Boolean(
       document.querySelector('[role="group"][aria-label="Plugin directory"]')
     )`);
     if (!officialDirectoryFound) await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  let usedDirectoryFixture = false;
   if (!officialDirectoryFound) {
-    usedDirectoryFixture = await evaluate(page.webSocketDebuggerUrl, `(() => {
-      document.querySelector('[data-codeex-management-fixture]')?.remove();
-      const content = document.createElement('div');
-      content.dataset.codeexManagementFixture = 'true';
-      const row = document.createElement('div');
-      const group = document.createElement('div');
-      group.setAttribute('role', 'group');
-      group.setAttribute('aria-label', 'Plugin directory');
-      for (const [label, pressed] of [['Public', 'true'], ['Personal', 'false']]) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = label;
-        button.setAttribute('aria-pressed', pressed);
-        button.className = pressed === 'true' ? 'fixture-selected' : 'fixture-inactive';
-        group.append(button);
-      }
-      row.append(group);
-      content.append(row, document.createElement('section'));
-      document.body.append(content);
-      return true;
-    })()`);
+    usedDirectoryFixture = await installDirectoryFixture();
   }
 
   let initial = null;

@@ -42,11 +42,28 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controlToken = ""
     private var statusItem: NSStatusItem?
     private var quitting = false
+    private var reusedExistingServer = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             let url = try startServer()
             configureControl(url)
+            if reusedExistingServer {
+                activateRuntime(attemptsRemaining: 240) { [weak self] activated in
+                    guard let self else { return }
+                    if activated {
+                        self.quitting = true
+                        NSApp.terminate(nil)
+                    } else {
+                        self.showFatalError(NSError(
+                            domain: "Codeex",
+                            code: 5,
+                            userInfo: [NSLocalizedDescriptionKey: "已有 Codeex 服务未能在两分钟内恢复窗口，请查看 ~/Library/Logs/Codeex/runtime.log。"]
+                        ))
+                    }
+                }
+                return
+            }
             installStatusMenu()
             // Launching the app is an explicit foreground action. Runtime
             // preparation remains background-only; this activation is scoped
@@ -142,7 +159,7 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         var line = Data()
         let reader = output.fileHandleForReading
-        while process.isRunning {
+        while true {
             guard let byte = try reader.read(upToCount: 1), !byte.isEmpty else { break }
             if byte[byte.startIndex] == 10 { break }
             line.append(byte)
@@ -150,12 +167,15 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 throw NSError(domain: "Codeex", code: 2, userInfo: [NSLocalizedDescriptionKey: "Codeex 服务返回了无效响应。"])
             }
         }
-        guard process.isRunning else {
-            throw NSError(domain: "Codeex", code: 3, userInfo: [NSLocalizedDescriptionKey: "Codeex 服务提前退出，请查看 ~/Library/Logs/Codeex/supervisor.log。"])
-        }
         let payload = try JSONSerialization.jsonObject(with: line) as? [String: Any]
         guard let value = payload?["url"] as? String, let url = URL(string: value) else {
             throw NSError(domain: "Codeex", code: 4, userInfo: [NSLocalizedDescriptionKey: "Codeex 服务没有返回有效地址。"])
+        }
+        reusedExistingServer = payload?["reused"] as? Bool == true
+        if reusedExistingServer {
+            self.server = nil
+        } else if !process.isRunning {
+            throw NSError(domain: "Codeex", code: 3, userInfo: [NSLocalizedDescriptionKey: "Codeex 服务提前退出，请查看 ~/Library/Logs/Codeex/supervisor.log。"])
         }
         return url
     }
@@ -204,7 +224,10 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         URLSession.shared.dataTask(with: request) { data, _, _ in completion(data) }.resume()
     }
 
-    private func activateRuntime(attemptsRemaining: Int) {
+    private func activateRuntime(
+        attemptsRemaining: Int,
+        completion: ((Bool) -> Void)? = nil
+    ) {
         request("api/status") { [weak self] data in
             guard let self else { return }
             var application: NSRunningApplication?
@@ -220,11 +243,17 @@ final class CodeexDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let application {
                 DispatchQueue.main.async {
                     application.activate(options: [.activateAllWindows])
+                    completion?(true)
                 }
             } else if attemptsRemaining > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.activateRuntime(attemptsRemaining: attemptsRemaining - 1)
+                    self.activateRuntime(
+                        attemptsRemaining: attemptsRemaining - 1,
+                        completion: completion
+                    )
                 }
+            } else {
+                DispatchQueue.main.async { completion?(false) }
             }
         }
     }

@@ -3,9 +3,13 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { discoverPlugins } from '../plugins/catalog.mjs';
-import { readPluginState, setPluginInstalled } from '../plugins/state.mjs';
-import { prepareStamp, projectRoot } from './paths.mjs';
+import { discoverPlugins, loadPluginModule } from '../plugins/catalog.mjs';
+import {
+  installedPlugins,
+  readPluginState,
+  setPluginInstalled,
+} from '../plugins/state.mjs';
+import { officialCodexCli, prepareStamp, projectRoot } from './paths.mjs';
 import {
   detectFullDiskAccess,
   openFullDiskAccessSettings,
@@ -58,6 +62,23 @@ export async function startControlServer({
   port = 0,
 }) {
   const token = authToken || randomBytes(24).toString('hex');
+  const resolvedCodexHome = codexHome || process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  const dispatchPluginControlRequest = async (request, url) => {
+    if (!url.pathname.startsWith('/api/plugins/')) return null;
+    const plugins = await installedPlugins(stateFile);
+    for (const plugin of plugins) {
+      const module = await loadPluginModule(plugin);
+      if (typeof module.handleControlRequest !== 'function') continue;
+      const result = await module.handleControlRequest({
+        request,
+        url,
+        codexHome: resolvedCodexHome,
+        officialCodexCli,
+      });
+      if (result != null) return result;
+    }
+    return null;
+  };
   const status = async () => {
     const [catalog, state, metadata, version, fullDiskAccess] = await Promise.all([
       discoverPlugins(),
@@ -71,8 +92,7 @@ export async function startControlServer({
       ? await getRuntimeStatus()
       : { state: 'running', pid: null, activePluginIds: getActivePluginIds() };
     const active = new Set(enhancedCodex.activePluginIds || []);
-    const codexRoot = codexHome || process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-    const daemonSocket = path.join(codexRoot, 'app-server-control', 'app-server-control.sock');
+    const daemonSocket = path.join(resolvedCodexHome, 'app-server-control', 'app-server-control.sock');
     return {
       product: {
         name: 'Codeex',
@@ -154,6 +174,10 @@ export async function startControlServer({
         );
         return send(response, 200, await status());
       }
+      const pluginResponse = await dispatchPluginControlRequest(request, url);
+      if (pluginResponse) {
+        return send(response, pluginResponse.status || 200, pluginResponse.body || {});
+      }
       if (request.method === 'POST' && url.pathname === '/api/restart') {
         if (!onRestart) return send(response, 409, { error: 'Codex is not managed by Codeex.' });
         send(response, 202, { accepted: true });
@@ -166,7 +190,8 @@ export async function startControlServer({
       }
       send(response, 404, { error: 'Not found.' });
     } catch (error) {
-      send(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      send(response, statusCode, { error: error instanceof Error ? error.message : String(error) });
     }
   });
   await new Promise((resolve, reject) => {

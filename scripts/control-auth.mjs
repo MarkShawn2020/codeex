@@ -32,3 +32,34 @@ export async function ensureControlAuth() {
   await chmod(controlAuthFile, 0o600);
   return auth;
 }
+
+export async function reuseExistingControl(
+  auth,
+  { fetchImpl = fetch, timeoutMs = 3_000 } = {},
+) {
+  if (!validAuth(auth)) return null;
+  const origin = `http://127.0.0.1:${auth.port}`;
+  const headers = { 'X-Codeex-Token': auth.token };
+  try {
+    const statusResponse = await fetchImpl(`${origin}/api/status`, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!statusResponse.ok) return null;
+    const status = await statusResponse.json();
+    if (status?.product?.name !== 'Codeex') return null;
+
+    const launchResponse = await fetchImpl(`${origin}/api/launch`, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!launchResponse.ok) return null;
+    return {
+      url: `${origin}/?port=${auth.port}&token=${encodeURIComponent(auth.token)}&mode=wrapper`,
+      port: auth.port,
+    };
+  } catch {
+    return null;
+  }
+}
